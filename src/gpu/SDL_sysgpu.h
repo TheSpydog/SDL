@@ -1,4 +1,4 @@
-/*
+﻿/*
   Simple DirectMedia Layer
   Copyright (C) 1997-2024 Sam Lantinga <slouken@libsdl.org>
 
@@ -29,16 +29,16 @@
 typedef struct Pass
 {
     SDL_GPUCommandBuffer *command_buffer;
-    bool inProgress;
+    bool in_progress;
 } Pass;
 
 typedef struct CommandBufferCommonHeader
 {
     SDL_GPUDevice *device;
     Pass render_pass;
-    bool graphicsPipelineBound;
+    bool graphics_pipeline_bound;
     Pass compute_pass;
-    bool computePipelineBound;
+    bool compute_pipeline_bound;
     Pass copy_pass;
     bool submitted;
 } CommandBufferCommonHeader;
@@ -57,7 +57,7 @@ typedef struct BlitFragmentUniforms
     float height;
 
     Uint32 mip_level;
-    float layerOrDepth;
+    float layer_or_depth;
 } BlitFragmentUniforms;
 
 typedef struct BlitPipelineCacheEntry

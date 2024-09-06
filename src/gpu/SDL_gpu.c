@@ -42,39 +42,39 @@
 
 #define CHECK_ANY_PASS_IN_PROGRESS(msg, retval)                                 \
     if (                                                                        \
-        ((CommandBufferCommonHeader *)command_buffer)->render_pass.inProgress ||  \
-        ((CommandBufferCommonHeader *)command_buffer)->compute_pass.inProgress || \
-        ((CommandBufferCommonHeader *)command_buffer)->copy_pass.inProgress) {    \
+        ((CommandBufferCommonHeader *)command_buffer)->render_pass.in_progress ||  \
+        ((CommandBufferCommonHeader *)command_buffer)->compute_pass.in_progress || \
+        ((CommandBufferCommonHeader *)command_buffer)->copy_pass.in_progress) {    \
         SDL_assert_release(!msg);                                               \
         return retval;                                                          \
     }
 
 #define CHECK_RENDERPASS                                     \
-    if (!((Pass *)render_pass)->inProgress) {                 \
+    if (!((Pass *)render_pass)->in_progress) {                 \
         SDL_assert_release(!"Render pass not in progress!"); \
         return;                                              \
     }
 
 #define CHECK_GRAPHICS_PIPELINE_BOUND                                                       \
-    if (!((CommandBufferCommonHeader *)RENDERPASS_COMMAND_BUFFER)->graphicsPipelineBound) { \
+    if (!((CommandBufferCommonHeader *)RENDERPASS_COMMAND_BUFFER)->graphics_pipeline_bound) { \
         SDL_assert_release(!"Graphics pipeline not bound!");                                \
         return;                                                                             \
     }
 
 #define CHECK_COMPUTEPASS                                     \
-    if (!((Pass *)compute_pass)->inProgress) {                 \
+    if (!((Pass *)compute_pass)->in_progress) {                 \
         SDL_assert_release(!"Compute pass not in progress!"); \
         return;                                               \
     }
 
 #define CHECK_COMPUTE_PIPELINE_BOUND                                                        \
-    if (!((CommandBufferCommonHeader *)COMPUTEPASS_COMMAND_BUFFER)->computePipelineBound) { \
+    if (!((CommandBufferCommonHeader *)COMPUTEPASS_COMMAND_BUFFER)->compute_pipeline_bound) { \
         SDL_assert_release(!"Compute pipeline not bound!");                                 \
         return;                                                                             \
     }
 
 #define CHECK_COPYPASS                                     \
-    if (!((Pass *)copy_pass)->inProgress) {                 \
+    if (!((Pass *)copy_pass)->in_progress) {                 \
         SDL_assert_release(!"Copy pass not in progress!"); \
         return;                                            \
     }
@@ -323,7 +323,7 @@ void SDL_GPU_BlitCommon(
     blitFragmentUniforms.mip_level = source->mip_level;
 
     layerDivisor = (srcHeader->info.type == SDL_GPU_TEXTURETYPE_3D) ? srcHeader->info.layer_count_or_depth : 1;
-    blitFragmentUniforms.layerOrDepth = (float)source->layer_or_depth_plane / layerDivisor;
+    blitFragmentUniforms.layer_or_depth = (float)source->layer_or_depth_plane / layerDivisor;
 
     if (flip_mode & SDL_FLIP_HORIZONTAL) {
         blitFragmentUniforms.left += blitFragmentUniforms.width;
@@ -1067,13 +1067,13 @@ SDL_GPUCommandBuffer *SDL_AcquireGPUCommandBuffer(
     commandBufferHeader = (CommandBufferCommonHeader *)command_buffer;
     commandBufferHeader->device = device;
     commandBufferHeader->render_pass.command_buffer = command_buffer;
-    commandBufferHeader->render_pass.inProgress = false;
-    commandBufferHeader->graphicsPipelineBound = false;
+    commandBufferHeader->render_pass.in_progress = false;
+    commandBufferHeader->graphics_pipeline_bound = false;
     commandBufferHeader->compute_pass.command_buffer = command_buffer;
-    commandBufferHeader->compute_pass.inProgress = false;
-    commandBufferHeader->computePipelineBound = false;
+    commandBufferHeader->compute_pass.in_progress = false;
+    commandBufferHeader->compute_pipeline_bound = false;
     commandBufferHeader->copy_pass.command_buffer = command_buffer;
-    commandBufferHeader->copy_pass.inProgress = false;
+    commandBufferHeader->copy_pass.in_progress = false;
     commandBufferHeader->submitted = false;
 
     return command_buffer;
@@ -1205,7 +1205,7 @@ SDL_GPURenderPass *SDL_BeginGPURenderPass(
         depth_stencil_attachment_info);
 
     commandBufferHeader = (CommandBufferCommonHeader *)command_buffer;
-    commandBufferHeader->render_pass.inProgress = true;
+    commandBufferHeader->render_pass.in_progress = true;
     return (SDL_GPURenderPass *)&(commandBufferHeader->render_pass);
 }
 
@@ -1229,7 +1229,7 @@ void SDL_BindGPUGraphicsPipeline(
         graphics_pipeline);
 
     commandBufferHeader = (CommandBufferCommonHeader *)RENDERPASS_COMMAND_BUFFER;
-    commandBufferHeader->graphicsPipelineBound = true;
+    commandBufferHeader->graphics_pipeline_bound = true;
 }
 
 void SDL_SetGPUViewport(
@@ -1646,8 +1646,8 @@ void SDL_EndGPURenderPass(
         RENDERPASS_COMMAND_BUFFER);
 
     commandBufferCommonHeader = (CommandBufferCommonHeader *)RENDERPASS_COMMAND_BUFFER;
-    commandBufferCommonHeader->render_pass.inProgress = false;
-    commandBufferCommonHeader->graphicsPipelineBound = false;
+    commandBufferCommonHeader->render_pass.in_progress = false;
+    commandBufferCommonHeader->graphics_pipeline_bound = false;
 }
 
 // Compute Pass
@@ -1694,7 +1694,7 @@ SDL_GPUComputePass *SDL_BeginGPUComputePass(
         num_storage_buffer_bindings);
 
     commandBufferHeader = (CommandBufferCommonHeader *)command_buffer;
-    commandBufferHeader->compute_pass.inProgress = true;
+    commandBufferHeader->compute_pass.in_progress = true;
     return (SDL_GPUComputePass *)&(commandBufferHeader->compute_pass);
 }
 
@@ -1722,7 +1722,7 @@ void SDL_BindGPUComputePipeline(
         compute_pipeline);
 
     commandBufferHeader = (CommandBufferCommonHeader *)COMPUTEPASS_COMMAND_BUFFER;
-    commandBufferHeader->computePipelineBound = true;
+    commandBufferHeader->compute_pipeline_bound = true;
 }
 
 void SDL_BindGPUComputeStorageTextures(
@@ -1839,8 +1839,8 @@ void SDL_EndGPUComputePass(
         COMPUTEPASS_COMMAND_BUFFER);
 
     commandBufferCommonHeader = (CommandBufferCommonHeader *)COMPUTEPASS_COMMAND_BUFFER;
-    commandBufferCommonHeader->compute_pass.inProgress = false;
-    commandBufferCommonHeader->computePipelineBound = false;
+    commandBufferCommonHeader->compute_pass.in_progress = false;
+    commandBufferCommonHeader->compute_pipeline_bound = false;
 }
 
 // TransferBuffer Data
@@ -1898,7 +1898,7 @@ SDL_GPUCopyPass *SDL_BeginGPUCopyPass(
         command_buffer);
 
     commandBufferHeader = (CommandBufferCommonHeader *)command_buffer;
-    commandBufferHeader->copy_pass.inProgress = true;
+    commandBufferHeader->copy_pass.in_progress = true;
     return (SDL_GPUCopyPass *)&(commandBufferHeader->copy_pass);
 }
 
@@ -2081,7 +2081,7 @@ void SDL_EndGPUCopyPass(
     COPYPASS_DEVICE->EndCopyPass(
         COPYPASS_COMMAND_BUFFER);
 
-    ((CommandBufferCommonHeader *)COPYPASS_COMMAND_BUFFER)->copy_pass.inProgress = false;
+    ((CommandBufferCommonHeader *)COPYPASS_COMMAND_BUFFER)->copy_pass.in_progress = false;
 }
 
 void SDL_GenerateMipmapsForGPUTexture(
@@ -2344,9 +2344,9 @@ void SDL_SubmitGPUCommandBuffer(
     if (COMMAND_BUFFER_DEVICE->debug_mode) {
         CHECK_COMMAND_BUFFER
         if (
-            commandBufferHeader->render_pass.inProgress ||
-            commandBufferHeader->compute_pass.inProgress ||
-            commandBufferHeader->copy_pass.inProgress) {
+            commandBufferHeader->render_pass.in_progress ||
+            commandBufferHeader->compute_pass.in_progress ||
+            commandBufferHeader->copy_pass.in_progress) {
             SDL_assert_release(!"Cannot submit command buffer while a pass is in progress!");
             return;
         }
@@ -2371,9 +2371,9 @@ SDL_GPUFence *SDL_SubmitGPUCommandBufferAndAcquireFence(
     if (COMMAND_BUFFER_DEVICE->debug_mode) {
         CHECK_COMMAND_BUFFER_RETURN_NULL
         if (
-            commandBufferHeader->render_pass.inProgress ||
-            commandBufferHeader->compute_pass.inProgress ||
-            commandBufferHeader->copy_pass.inProgress) {
+            commandBufferHeader->render_pass.in_progress ||
+            commandBufferHeader->compute_pass.in_progress ||
+            commandBufferHeader->copy_pass.in_progress) {
             SDL_assert_release(!"Cannot submit command buffer while a pass is in progress!");
             return NULL;
         }
