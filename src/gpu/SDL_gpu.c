@@ -152,7 +152,7 @@ SDL_GPUGraphicsPipeline *SDL_GPU_FetchBlitPipeline(
     Uint32 *blitPipelineCapacity)
 {
     SDL_GPUGraphicsPipelineCreateInfo blitPipelineCreateInfo;
-    SDL_GPUColorAttachmentDescription colorAttachmentDesc;
+    SDL_GPUColorTargetDescription color_target_desc;
     SDL_GPUGraphicsPipeline *pipeline;
 
     if (blitPipelineCount == NULL) {
@@ -169,14 +169,14 @@ SDL_GPUGraphicsPipeline *SDL_GPU_FetchBlitPipeline(
     // No pipeline found, we'll need to make one!
     SDL_zero(blitPipelineCreateInfo);
 
-    SDL_zero(colorAttachmentDesc);
-    colorAttachmentDesc.blend_state.color_write_mask = 0xF;
-    colorAttachmentDesc.format = destinationFormat;
+    SDL_zero(color_target_desc);
+    color_target_desc.blend_state.color_write_mask = 0xF;
+    color_target_desc.format = destinationFormat;
 
-    blitPipelineCreateInfo.attachment_info.color_attachment_descriptions = &colorAttachmentDesc;
-    blitPipelineCreateInfo.attachment_info.num_color_attachments = 1;
-    blitPipelineCreateInfo.attachment_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM; // arbitrary
-    blitPipelineCreateInfo.attachment_info.has_depth_stencil_attachment = false;
+    blitPipelineCreateInfo.target_info.color_target_descriptions = &color_target_desc;
+    blitPipelineCreateInfo.target_info.num_color_targets = 1;
+    blitPipelineCreateInfo.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM; // arbitrary
+    blitPipelineCreateInfo.target_info.has_depth_stencil_target = false;
 
     blitPipelineCreateInfo.vertex_shader = blitVertexShader;
     if (sourceTextureType == SDL_GPU_TEXTURETYPE_CUBE) {
@@ -242,7 +242,7 @@ void SDL_GPU_BlitCommon(
     TextureCommonHeader *srcHeader = (TextureCommonHeader *)source->texture;
     TextureCommonHeader *dstHeader = (TextureCommonHeader *)destination->texture;
     SDL_GPUGraphicsPipeline *blitPipeline;
-    SDL_GPUColorAttachmentInfo colorAttachmentInfo;
+    SDL_GPUColorTargetInfo color_target_info;
     SDL_GPUViewport viewport;
     SDL_GPUTextureSamplerBinding textureSamplerBinding;
     BlitFragmentUniforms blitFragmentUniforms;
@@ -273,21 +273,21 @@ void SDL_GPU_BlitCommon(
         dstHeader->info.type != SDL_GPU_TEXTURETYPE_3D &&
         destination->w == dstHeader->info.width &&
         destination->h == dstHeader->info.height) {
-        colorAttachmentInfo.load_op = SDL_GPU_LOADOP_DONT_CARE;
+        color_target_info.load_op = SDL_GPU_LOADOP_DONT_CARE;
     } else {
-        colorAttachmentInfo.load_op = SDL_GPU_LOADOP_LOAD;
+        color_target_info.load_op = SDL_GPU_LOADOP_LOAD;
     }
 
-    colorAttachmentInfo.store_op = SDL_GPU_STOREOP_STORE;
+    color_target_info.store_op = SDL_GPU_STOREOP_STORE;
 
-    colorAttachmentInfo.texture = destination->texture;
-    colorAttachmentInfo.mip_level = destination->mip_level;
-    colorAttachmentInfo.layer_or_depth_plane = destination->layer_or_depth_plane;
-    colorAttachmentInfo.cycle = cycle;
+    color_target_info.texture = destination->texture;
+    color_target_info.mip_level = destination->mip_level;
+    color_target_info.layer_or_depth_plane = destination->layer_or_depth_plane;
+    color_target_info.cycle = cycle;
 
     render_pass = SDL_BeginGPURenderPass(
         command_buffer,
-        &colorAttachmentInfo,
+        &color_target_info,
         1,
         NULL);
 
@@ -641,17 +641,17 @@ SDL_GPUGraphicsPipeline *SDL_CreateGPUGraphicsPipeline(
     }
 
     if (device->debug_mode) {
-        for (Uint32 i = 0; i < graphicsPipelineCreateInfo->attachment_info.num_color_attachments; i += 1) {
-            CHECK_TEXTUREFORMAT_ENUM_INVALID(graphicsPipelineCreateInfo->attachment_info.color_attachment_descriptions[i].format, NULL);
-            if (IsDepthFormat(graphicsPipelineCreateInfo->attachment_info.color_attachment_descriptions[i].format)) {
-                SDL_assert_release(!"Color attachment formats cannot be a depth format!");
+        for (Uint32 i = 0; i < graphicsPipelineCreateInfo->target_info.num_color_targets; i += 1) {
+            CHECK_TEXTUREFORMAT_ENUM_INVALID(graphicsPipelineCreateInfo->target_info.color_target_descriptions[i].format, NULL);
+            if (IsDepthFormat(graphicsPipelineCreateInfo->target_info.color_target_descriptions[i].format)) {
+                SDL_assert_release(!"Color target formats cannot be a depth format!");
                 return NULL;
             }
         }
-        if (graphicsPipelineCreateInfo->attachment_info.has_depth_stencil_attachment) {
-            CHECK_TEXTUREFORMAT_ENUM_INVALID(graphicsPipelineCreateInfo->attachment_info.depth_stencil_format, NULL);
-            if (!IsDepthFormat(graphicsPipelineCreateInfo->attachment_info.depth_stencil_format)) {
-                SDL_assert_release(!"Depth-stencil attachment format must be a depth format!");
+        if (graphicsPipelineCreateInfo->target_info.has_depth_stencil_target) {
+            CHECK_TEXTUREFORMAT_ENUM_INVALID(graphicsPipelineCreateInfo->target_info.depth_stencil_format, NULL);
+            if (!IsDepthFormat(graphicsPipelineCreateInfo->target_info.depth_stencil_format)) {
+                SDL_assert_release(!"Depth-stencil target format must be a depth format!");
                 return NULL;
             }
         }
@@ -1163,9 +1163,9 @@ void SDL_PushGPUComputeUniformData(
 
 SDL_GPURenderPass *SDL_BeginGPURenderPass(
     SDL_GPUCommandBuffer *command_buffer,
-    const SDL_GPUColorAttachmentInfo *color_attachment_infos,
-    Uint32 num_color_attachments,
-    const SDL_GPUDepthStencilAttachmentInfo *depth_stencil_attachment_info)
+    const SDL_GPUColorTargetInfo *color_target_infos,
+    Uint32 num_color_targets,
+    const SDL_GPUDepthStencilTargetInfo *depth_stencil_target_info)
 {
     CommandBufferCommonHeader *commandBufferHeader;
 
@@ -1173,13 +1173,13 @@ SDL_GPURenderPass *SDL_BeginGPURenderPass(
         SDL_InvalidParamError("command_buffer");
         return NULL;
     }
-    if (color_attachment_infos == NULL && num_color_attachments > 0) {
-        SDL_InvalidParamError("color_attachment_infos");
+    if (color_target_infos == NULL && num_color_targets > 0) {
+        SDL_InvalidParamError("color_target_infos");
         return NULL;
     }
 
-    if (num_color_attachments > MAX_COLOR_TARGET_BINDINGS) {
-        SDL_SetError("num_color_attachments exceeds MAX_COLOR_TARGET_BINDINGS");
+    if (num_color_targets > MAX_COLOR_TARGET_BINDINGS) {
+        SDL_SetError("num_color_targets exceeds MAX_COLOR_TARGET_BINDINGS");
         return NULL;
     }
 
@@ -1187,22 +1187,22 @@ SDL_GPURenderPass *SDL_BeginGPURenderPass(
         CHECK_COMMAND_BUFFER_RETURN_NULL
         CHECK_ANY_PASS_IN_PROGRESS("Cannot begin render pass during another pass!", NULL)
 
-        for (Uint32 i = 0; i < num_color_attachments; i += 1) {
-            if (color_attachment_infos[i].cycle && color_attachment_infos[i].load_op == SDL_GPU_LOADOP_LOAD) {
-                SDL_assert_release(!"Cannot cycle color attachment when load op is LOAD!");
+        for (Uint32 i = 0; i < num_color_targets; i += 1) {
+            if (color_target_infos[i].cycle && color_target_infos[i].load_op == SDL_GPU_LOADOP_LOAD) {
+                SDL_assert_release(!"Cannot cycle color target when load op is LOAD!");
             }
         }
 
-        if (depth_stencil_attachment_info != NULL && depth_stencil_attachment_info->cycle && (depth_stencil_attachment_info->load_op == SDL_GPU_LOADOP_LOAD || depth_stencil_attachment_info->load_op == SDL_GPU_LOADOP_LOAD)) {
-            SDL_assert_release(!"Cannot cycle depth attachment when load op or stencil load op is LOAD!");
+        if (depth_stencil_target_info != NULL && depth_stencil_target_info->cycle && (depth_stencil_target_info->load_op == SDL_GPU_LOADOP_LOAD || depth_stencil_target_info->load_op == SDL_GPU_LOADOP_LOAD)) {
+            SDL_assert_release(!"Cannot cycle depth target when load op or stencil load op is LOAD!");
         }
     }
 
     COMMAND_BUFFER_DEVICE->BeginRenderPass(
         command_buffer,
-        color_attachment_infos,
-        num_color_attachments,
-        depth_stencil_attachment_info);
+        color_target_infos,
+        num_color_targets,
+        depth_stencil_target_info);
 
     commandBufferHeader = (CommandBufferCommonHeader *)command_buffer;
     commandBufferHeader->render_pass.in_progress = true;

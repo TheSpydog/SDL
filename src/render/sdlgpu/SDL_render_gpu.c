@@ -69,7 +69,7 @@ typedef struct GPU_RenderData
         SDL_GPURenderPass *render_pass;
         SDL_Texture *render_target;
         SDL_GPUCommandBuffer *command_buffer;
-        SDL_GPUColorAttachmentInfo color_attachment;
+        SDL_GPUColorTargetInfo color_attachment;
         SDL_GPUViewport viewport;
         SDL_Rect scissor;
         SDL_FColor draw_color;

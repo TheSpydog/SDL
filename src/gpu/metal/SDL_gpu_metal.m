@@ -995,7 +995,7 @@ static SDL_GPUGraphicsPipeline *METAL_CreateGraphicsPipeline(
         MetalShader *vertex_shader = (MetalShader *)createinfo->vertex_shader;
         MetalShader *fragment_shader = (MetalShader *)createinfo->fragment_shader;
         MTLRenderPipelineDescriptor *pipelineDescriptor;
-        const SDL_GPUColorAttachmentBlendState *blend_state;
+        const SDL_GPUColorTargetBlendState *blend_state;
         MTLVertexDescriptor *vertexDescriptor;
         Uint32 binding;
         MTLDepthStencilDescriptor *depthStencilDescriptor;
@@ -1010,10 +1010,10 @@ static SDL_GPUGraphicsPipeline *METAL_CreateGraphicsPipeline(
 
         // Blend
 
-        for (Uint32 i = 0; i < createinfo->attachment_info.num_color_attachments; i += 1) {
-            blend_state = &createinfo->attachment_info.color_attachment_descriptions[i].blend_state;
+        for (Uint32 i = 0; i < createinfo->target_info.num_color_targets; i += 1) {
+            blend_state = &createinfo->target_info.color_target_descriptions[i].blend_state;
 
-            pipelineDescriptor.colorAttachments[i].pixelFormat = SDLToMetal_SurfaceFormat[createinfo->attachment_info.color_attachment_descriptions[i].format];
+            pipelineDescriptor.colorAttachments[i].pixelFormat = SDLToMetal_SurfaceFormat[createinfo->target_info.color_target_descriptions[i].format];
             pipelineDescriptor.colorAttachments[i].writeMask = SDLToMetal_ColorWriteMask(blend_state->color_write_mask);
             pipelineDescriptor.colorAttachments[i].blendingEnabled = blend_state->enable_blend;
             pipelineDescriptor.colorAttachments[i].rgbBlendOperation = SDLToMetal_BlendOp[blend_state->color_blend_op];
@@ -1030,11 +1030,11 @@ static SDL_GPUGraphicsPipeline *METAL_CreateGraphicsPipeline(
 
         // Depth Stencil
 
-        if (createinfo->attachment_info.has_depth_stencil_attachment) {
-            pipelineDescriptor.depthAttachmentPixelFormat = SDLToMetal_SurfaceFormat[createinfo->attachment_info.depth_stencil_format];
+        if (createinfo->target_info.has_depth_stencil_target) {
+            pipelineDescriptor.depthAttachmentPixelFormat = SDLToMetal_SurfaceFormat[createinfo->target_info.depth_stencil_format];
 
             if (createinfo->depth_stencil_state.enable_stencil_test) {
-                pipelineDescriptor.stencilAttachmentPixelFormat = SDLToMetal_SurfaceFormat[createinfo->attachment_info.depth_stencil_format];
+                pipelineDescriptor.stencilAttachmentPixelFormat = SDLToMetal_SurfaceFormat[createinfo->target_info.depth_stencil_format];
 
                 frontStencilDescriptor = [MTLStencilDescriptor new];
                 frontStencilDescriptor.stencilCompareFunction = SDLToMetal_CompareOp[createinfo->depth_stencil_state.front_stencil_state.compare_op];
@@ -2141,9 +2141,9 @@ static void METAL_SetStencilReference(
 
 static void METAL_BeginRenderPass(
     SDL_GPUCommandBuffer *command_buffer,
-    const SDL_GPUColorAttachmentInfo *color_attachment_infos,
-    Uint32 num_color_attachments,
-    const SDL_GPUDepthStencilAttachmentInfo *depth_stencil_attachment_info)
+    const SDL_GPUColorTargetInfo *color_target_infos,
+    Uint32 num_color_targets,
+    const SDL_GPUDepthStencilTargetInfo *depth_stencil_target_info)
 {
     @autoreleasepool {
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)command_buffer;
@@ -2154,12 +2154,12 @@ static void METAL_BeginRenderPass(
         SDL_GPUViewport viewport;
         SDL_Rect scissorRect;
 
-        for (Uint32 i = 0; i < num_color_attachments; i += 1) {
-            MetalTextureContainer *container = (MetalTextureContainer *)color_attachment_infos[i].texture;
+        for (Uint32 i = 0; i < num_color_targets; i += 1) {
+            MetalTextureContainer *container = (MetalTextureContainer *)color_target_infos[i].texture;
             MetalTexture *texture = METAL_INTERNAL_PrepareTextureForWrite(
                 renderer,
                 container,
-                color_attachment_infos[i].cycle);
+                color_target_infos[i].cycle);
 
             if (texture->msaaHandle) {
                 passDescriptor.colorAttachments[i].texture = texture->msaaHandle;
@@ -2167,31 +2167,31 @@ static void METAL_BeginRenderPass(
             } else {
                 passDescriptor.colorAttachments[i].texture = texture->handle;
             }
-            passDescriptor.colorAttachments[i].level = color_attachment_infos[i].mip_level;
+            passDescriptor.colorAttachments[i].level = color_target_infos[i].mip_level;
             if (container->header.info.type == SDL_GPU_TEXTURETYPE_3D) {
-                passDescriptor.colorAttachments[i].depthPlane = color_attachment_infos[i].layer_or_depth_plane;
+                passDescriptor.colorAttachments[i].depthPlane = color_target_infos[i].layer_or_depth_plane;
             } else {
-                passDescriptor.colorAttachments[i].slice = color_attachment_infos[i].layer_or_depth_plane;
+                passDescriptor.colorAttachments[i].slice = color_target_infos[i].layer_or_depth_plane;
             }
             passDescriptor.colorAttachments[i].clearColor = MTLClearColorMake(
-                color_attachment_infos[i].clear_color.r,
-                color_attachment_infos[i].clear_color.g,
-                color_attachment_infos[i].clear_color.b,
-                color_attachment_infos[i].clear_color.a);
-            passDescriptor.colorAttachments[i].loadAction = SDLToMetal_LoadOp[color_attachment_infos[i].load_op];
+                color_target_infos[i].clear_color.r,
+                color_target_infos[i].clear_color.g,
+                color_target_infos[i].clear_color.b,
+                color_target_infos[i].clear_color.a);
+            passDescriptor.colorAttachments[i].loadAction = SDLToMetal_LoadOp[color_target_infos[i].load_op];
             passDescriptor.colorAttachments[i].storeAction = SDLToMetal_StoreOp(
-                color_attachment_infos[i].store_op,
+                color_target_infos[i].store_op,
                 texture->msaaHandle ? 1 : 0);
 
             METAL_INTERNAL_TrackTexture(metalCommandBuffer, texture);
         }
 
-        if (depth_stencil_attachment_info != NULL) {
-            MetalTextureContainer *container = (MetalTextureContainer *)depth_stencil_attachment_info->texture;
+        if (depth_stencil_target_info != NULL) {
+            MetalTextureContainer *container = (MetalTextureContainer *)depth_stencil_target_info->texture;
             MetalTexture *texture = METAL_INTERNAL_PrepareTextureForWrite(
                 renderer,
                 container,
-                depth_stencil_attachment_info->cycle);
+                depth_stencil_target_info->cycle);
 
             if (texture->msaaHandle) {
                 passDescriptor.depthAttachment.texture = texture->msaaHandle;
@@ -2199,11 +2199,11 @@ static void METAL_BeginRenderPass(
             } else {
                 passDescriptor.depthAttachment.texture = texture->handle;
             }
-            passDescriptor.depthAttachment.loadAction = SDLToMetal_LoadOp[depth_stencil_attachment_info->load_op];
+            passDescriptor.depthAttachment.loadAction = SDLToMetal_LoadOp[depth_stencil_target_info->load_op];
             passDescriptor.depthAttachment.storeAction = SDLToMetal_StoreOp(
-                depth_stencil_attachment_info->store_op,
+                depth_stencil_target_info->store_op,
                 texture->msaaHandle ? 1 : 0);
-            passDescriptor.depthAttachment.clearDepth = depth_stencil_attachment_info->clear_value.depth;
+            passDescriptor.depthAttachment.clearDepth = depth_stencil_target_info->clear_value.depth;
 
             if (IsStencilFormat(container->header.info.format)) {
                 if (texture->msaaHandle) {
@@ -2212,11 +2212,11 @@ static void METAL_BeginRenderPass(
                 } else {
                     passDescriptor.stencilAttachment.texture = texture->handle;
                 }
-                passDescriptor.stencilAttachment.loadAction = SDLToMetal_LoadOp[depth_stencil_attachment_info->load_op];
+                passDescriptor.stencilAttachment.loadAction = SDLToMetal_LoadOp[depth_stencil_target_info->load_op];
                 passDescriptor.stencilAttachment.storeAction = SDLToMetal_StoreOp(
-                    depth_stencil_attachment_info->store_op,
+                    depth_stencil_target_info->store_op,
                     texture->msaaHandle ? 1 : 0);
-                passDescriptor.stencilAttachment.clearStencil = depth_stencil_attachment_info->clear_value.stencil;
+                passDescriptor.stencilAttachment.clearStencil = depth_stencil_target_info->clear_value.stencil;
             }
 
             METAL_INTERNAL_TrackTexture(metalCommandBuffer, texture);
@@ -2224,11 +2224,11 @@ static void METAL_BeginRenderPass(
 
         metalCommandBuffer->renderEncoder = [metalCommandBuffer->handle renderCommandEncoderWithDescriptor:passDescriptor];
 
-        // The viewport cannot be larger than the smallest attachment.
-        for (Uint32 i = 0; i < num_color_attachments; i += 1) {
-            MetalTextureContainer *container = (MetalTextureContainer *)color_attachment_infos[i].texture;
-            Uint32 w = container->header.info.width >> color_attachment_infos[i].mip_level;
-            Uint32 h = container->header.info.height >> color_attachment_infos[i].mip_level;
+        // The viewport cannot be larger than the smallest target.
+        for (Uint32 i = 0; i < num_color_targets; i += 1) {
+            MetalTextureContainer *container = (MetalTextureContainer *)color_target_infos[i].texture;
+            Uint32 w = container->header.info.width >> color_target_infos[i].mip_level;
+            Uint32 h = container->header.info.height >> color_target_infos[i].mip_level;
 
             if (w < vpWidth) {
                 vpWidth = w;
@@ -2239,8 +2239,8 @@ static void METAL_BeginRenderPass(
             }
         }
 
-        if (depth_stencil_attachment_info != NULL) {
-            MetalTextureContainer *container = (MetalTextureContainer *)depth_stencil_attachment_info->texture;
+        if (depth_stencil_target_info != NULL) {
+            MetalTextureContainer *container = (MetalTextureContainer *)depth_stencil_target_info->texture;
             Uint32 w = container->header.info.width;
             Uint32 h = container->header.info.height;
 

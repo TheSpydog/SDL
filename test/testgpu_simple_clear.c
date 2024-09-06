@@ -89,7 +89,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 	if (swapchainTexture != NULL) {
         const double currentTime = (double)SDL_GetPerformanceCounter() / SDL_GetPerformanceFrequency();
         SDL_GPURenderPass *renderPass;
-		SDL_GPUColorAttachmentInfo colorAttachmentInfo;
+		SDL_GPUColorTargetInfo colorAttachmentInfo;
         SDL_zero(colorAttachmentInfo);
 		colorAttachmentInfo.texture = swapchainTexture;
 		colorAttachmentInfo.clear_color.r = (float)(0.5 + 0.5 * SDL_sin(currentTime));
@@ -122,4 +122,3 @@ void SDL_AppQuit(void *appstate)
 	SDL_DestroyGPUDevice(gpu_device);
     SDLTest_CommonQuit(state);
 }
-

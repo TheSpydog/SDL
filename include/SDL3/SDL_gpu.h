@@ -494,7 +494,7 @@ typedef enum SDL_GPUTextureType
  * Specifies the sample count of a texture.
  *
  * Used in multisampling. Note that this value only applies when the texture
- * is used as a render pass attachment.
+ * is used as a render target.
  *
  * \since This enum is available since SDL 3.0.0
  *
@@ -751,8 +751,7 @@ typedef enum SDL_GPUStencilOp
 } SDL_GPUStencilOp;
 
 /**
- * Specifies the operator to be used when pixels in a render pass texture
- * attachment are blended with existing pixels in the texture.
+ * Specifies the operator to be used when pixels in a render target are blended with existing pixels in the texture.
  *
  * The source color is the value written by the fragment shader. The
  * destination color is the value currently existing in the texture.
@@ -771,8 +770,7 @@ typedef enum SDL_GPUBlendOp
 } SDL_GPUBlendOp;
 
 /**
- * Specifies a blending factor to be used when pixels in a render pass texture
- * attachment are blended with existing pixels in the texture.
+ * Specifies a blending factor to be used when pixels in a render target are blended with existing pixels in the texture.
  *
  * The source color is the value written by the fragment shader. The
  * destination color is the value currently existing in the texture.
@@ -1107,7 +1105,7 @@ typedef struct SDL_GPUStencilOpState
     SDL_GPUCompareOp compare_op;
 } SDL_GPUStencilOpState;
 
-typedef struct SDL_GPUColorAttachmentBlendState
+typedef struct SDL_GPUColorTargetBlendState
 {
     SDL_bool enable_blend;
     Uint8 padding1;
@@ -1120,7 +1118,7 @@ typedef struct SDL_GPUColorAttachmentBlendState
     SDL_GPUBlendFactor dst_alpha_blendfactor;
     SDL_GPUBlendOp alpha_blend_op;
     SDL_GPUColorComponentFlags color_write_mask;
-} SDL_GPUColorAttachmentBlendState;
+} SDL_GPUColorTargetBlendState;
 
 typedef struct SDL_GPUShaderCreateInfo
 {
@@ -1211,22 +1209,22 @@ typedef struct SDL_GPUDepthStencilState
     Uint8 padding3;
 } SDL_GPUDepthStencilState;
 
-typedef struct SDL_GPUColorAttachmentDescription
+typedef struct SDL_GPUColorTargetDescription
 {
     SDL_GPUTextureFormat format;
-    SDL_GPUColorAttachmentBlendState blend_state;
-} SDL_GPUColorAttachmentDescription;
+    SDL_GPUColorTargetBlendState blend_state;
+} SDL_GPUColorTargetDescription;
 
-typedef struct SDL_GPUGraphicsPipelineAttachmentInfo
+typedef struct SDL_GpuGraphicsPipelineTargetInfo
 {
-    const SDL_GPUColorAttachmentDescription *color_attachment_descriptions;
-    Uint32 num_color_attachments;
-    SDL_bool has_depth_stencil_attachment;
+    const SDL_GPUColorTargetDescription *color_target_descriptions;
+    Uint32 num_color_targets;
+    SDL_bool has_depth_stencil_target;
     Uint8 padding1;
     Uint8 padding2;
     Uint8 padding3;
     SDL_GPUTextureFormat depth_stencil_format;
-} SDL_GPUGraphicsPipelineAttachmentInfo;
+} SDL_GpuGraphicsPipelineTargetInfo;
 
 typedef struct SDL_GPUGraphicsPipelineCreateInfo
 {
@@ -1237,7 +1235,7 @@ typedef struct SDL_GPUGraphicsPipelineCreateInfo
     SDL_GPURasterizerState rasterizer_state;
     SDL_GPUMultisampleState multisample_state;
     SDL_GPUDepthStencilState depth_stencil_state;
-    SDL_GPUGraphicsPipelineAttachmentInfo attachment_info;
+    SDL_GpuGraphicsPipelineTargetInfo target_info;
 
     SDL_PropertiesID props;
 } SDL_GPUGraphicsPipelineCreateInfo;
@@ -1260,12 +1258,12 @@ typedef struct SDL_GPUComputePipelineCreateInfo
     SDL_PropertiesID props;
 } SDL_GPUComputePipelineCreateInfo;
 
-typedef struct SDL_GPUColorAttachmentInfo
+typedef struct SDL_GPUColorTargetInfo
 {
-    /* The texture that will be used as a color attachment by a render pass. */
+    /* The texture that will be used as a color target by a render pass. */
     SDL_GPUTexture *texture;
     Uint32 mip_level;
-    Uint32 layer_or_depth_plane; /* For 3D textures, you can bind an individual depth plane as an attachment. */
+    Uint32 layer_or_depth_plane; /* For 3D textures, you can bind an individual depth plane as a target. */
 
     /* Can be ignored by RenderPass if CLEAR is not used */
     SDL_FColor clear_color;
@@ -1300,11 +1298,11 @@ typedef struct SDL_GPUColorAttachmentInfo
     Uint8 padding1;
     Uint8 padding2;
     Uint8 padding3;
-} SDL_GPUColorAttachmentInfo;
+} SDL_GPUColorTargetInfo;
 
-typedef struct SDL_GPUDepthStencilAttachmentInfo
+typedef struct SDL_GPUDepthStencilTargetInfo
 {
-    /* The texture that will be used as the depth stencil attachment by a render pass. */
+    /* The texture that will be used as the depth stencil target by a render pass. */
     SDL_GPUTexture *texture;
 
     /* Can be ignored by the render pass if CLEAR is not used */
@@ -1365,7 +1363,7 @@ typedef struct SDL_GPUDepthStencilAttachmentInfo
     Uint8 padding1;
     Uint8 padding2;
     Uint8 padding3;
-} SDL_GPUDepthStencilAttachmentInfo;
+} SDL_GPUDepthStencilTargetInfo;
 
 /* Binding structs */
 
@@ -2046,7 +2044,7 @@ extern SDL_DECLSPEC void SDLCALL SDL_PushGPUComputeUniformData(
  * to worry about overwriting any data that is not yet uploaded.
  *
  * Another example: If you are using a texture in a render pass every frame, this can cause a data dependency between frames.
- * If you set cycle to SDL_TRUE in the ColorAttachmentInfo struct, you can prevent this data dependency.
+ * If you set cycle to SDL_TRUE in the SDL_GPUColorTargetInfo struct, you can prevent this data dependency.
  *
  * Cycling will never undefine already bound data.
  * When cycling, all data in the resource is considered to be undefined for subsequent commands until that data is written again.
@@ -2075,11 +2073,11 @@ extern SDL_DECLSPEC void SDLCALL SDL_PushGPUComputeUniformData(
  * copy pass until you have ended the render pass.
  *
  * \param command_buffer a command buffer.
- * \param color_attachment_infos an array of texture subresources with
+ * \param color_target_infos an array of texture subresources with
  *                             corresponding clear values and load/store ops.
- * \param num_color_attachments the number of color attachments in the
- *                             color_attachment_infos array.
- * \param depth_stencil_attachment_info a texture subresource with corresponding
+ * \param num_color_targets the number of color targets in the
+ *                             color_target_infos array.
+ * \param depth_stencil_target_info a texture subresource with corresponding
  *                                   clear value and load/store ops, may be
  *                                   NULL.
  * \returns a render pass handle.
@@ -2090,9 +2088,9 @@ extern SDL_DECLSPEC void SDLCALL SDL_PushGPUComputeUniformData(
  */
 extern SDL_DECLSPEC SDL_GPURenderPass *SDLCALL SDL_BeginGPURenderPass(
     SDL_GPUCommandBuffer *command_buffer,
-    const SDL_GPUColorAttachmentInfo *color_attachment_infos,
-    Uint32 num_color_attachments,
-    const SDL_GPUDepthStencilAttachmentInfo *depth_stencil_attachment_info);
+    const SDL_GPUColorTargetInfo *color_target_infos,
+    Uint32 num_color_targets,
+    const SDL_GPUDepthStencilTargetInfo *depth_stencil_target_info);
 
 /**
  * Binds a graphics pipeline on a render pass to be used in rendering.

@@ -299,8 +299,8 @@ Render(SDL_Window *window, const int windownum)
 {
     WindowState *winstate = &window_states[windownum];
     SDL_GPUTexture *swapchain;
-    SDL_GPUColorAttachmentInfo color_attachment;
-    SDL_GPUDepthStencilAttachmentInfo depth_attachment;
+    SDL_GPUColorTargetInfo color_attachment;
+    SDL_GPUDepthStencilTargetInfo depth_attachment;
     float matrix_rotate[16], matrix_modelview[16], matrix_perspective[16], matrix_final[16];
     Uint32 drawablew, drawableh;
     SDL_GPUCommandBuffer *cmd;
@@ -459,7 +459,7 @@ init_render_state(int msaa)
     SDL_GPUBufferCreateInfo buffer_desc;
     SDL_GPUTransferBufferCreateInfo transfer_buffer_desc;
     SDL_GPUGraphicsPipelineCreateInfo pipelinedesc;
-    SDL_GPUColorAttachmentDescription color_attachment_desc;
+    SDL_GPUColorTargetDescription color_attachment_desc;
     Uint32 drawablew, drawableh;
     SDL_GPUVertexAttribute vertex_attributes[2];
     SDL_GPUVertexBinding vertex_binding;
@@ -554,10 +554,10 @@ init_render_state(int msaa)
     color_attachment_desc.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     color_attachment_desc.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
 
-    pipelinedesc.attachment_info.num_color_attachments = 1;
-    pipelinedesc.attachment_info.color_attachment_descriptions = &color_attachment_desc;
-    pipelinedesc.attachment_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
-    pipelinedesc.attachment_info.has_depth_stencil_attachment = SDL_TRUE;
+    pipelinedesc.target_info.num_color_targets = 1;
+    pipelinedesc.target_info.color_target_descriptions = &color_attachment_desc;
+    pipelinedesc.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+    pipelinedesc.target_info.has_depth_stencil_target = SDL_TRUE;
 
     pipelinedesc.depth_stencil_state.enable_depth_test = 1;
     pipelinedesc.depth_stencil_state.enable_depth_write = 1;

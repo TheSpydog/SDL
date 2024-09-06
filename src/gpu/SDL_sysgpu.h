@@ -382,9 +382,9 @@ struct SDL_GPUDevice
 
     void (*BeginRenderPass)(
         SDL_GPUCommandBuffer *commandBuffer,
-        const SDL_GPUColorAttachmentInfo *colorAttachmentInfos,
-        Uint32 numColorAttachments,
-        const SDL_GPUDepthStencilAttachmentInfo *depthStencilAttachmentInfo);
+        const SDL_GPUColorTargetInfo *colorTargetInfos,
+        Uint32 numColorTargets,
+        const SDL_GPUDepthStencilTargetInfo *depthStencilTargetInfo);
 
     void (*BindGraphicsPipeline)(
         SDL_GPUCommandBuffer *commandBuffer,

@@ -476,14 +476,14 @@ typedef struct D3D11Shader
 
 typedef struct D3D11GraphicsPipeline
 {
-    Sint32 numColorAttachments;
-    DXGI_FORMAT colorAttachmentFormats[MAX_COLOR_TARGET_BINDINGS];
-    ID3D11BlendState *colorAttachmentBlendState;
+    Sint32 numColorTargets;
+    DXGI_FORMAT colorTargetFormats[MAX_COLOR_TARGET_BINDINGS];
+    ID3D11BlendState *colorTargetBlendState;
 
     SDL_GPUMultisampleState multisampleState;
 
-    Uint8 hasDepthStencilAttachment;
-    DXGI_FORMAT depthStencilAttachmentFormat;
+    Uint8 hasDepthStencilTarget;
+    DXGI_FORMAT depthStencilTargetFormat;
     ID3D11DepthStencilState *depthStencilState;
 
     SDL_GPUPrimitiveType primitiveType;
@@ -1227,7 +1227,7 @@ static void D3D11_ReleaseGraphicsPipeline(
     (void)driverData; // used by other backends
     D3D11GraphicsPipeline *d3d11GraphicsPipeline = (D3D11GraphicsPipeline *)graphicsPipeline;
 
-    ID3D11BlendState_Release(d3d11GraphicsPipeline->colorAttachmentBlendState);
+    ID3D11BlendState_Release(d3d11GraphicsPipeline->colorTargetBlendState);
     ID3D11DepthStencilState_Release(d3d11GraphicsPipeline->depthStencilState);
     ID3D11RasterizerState_Release(d3d11GraphicsPipeline->rasterizerState);
 
@@ -1248,8 +1248,8 @@ static void D3D11_ReleaseGraphicsPipeline(
 
 static ID3D11BlendState *D3D11_INTERNAL_FetchBlendState(
     D3D11Renderer *renderer,
-    Uint32 numColorAttachments,
-    const SDL_GPUColorAttachmentDescription *colorAttachments)
+    Uint32 numColorTargets,
+    const SDL_GPUColorTargetDescription *colorTargets)
 {
     ID3D11BlendState *result;
     D3D11_BLEND_DESC blendDesc;
@@ -1263,15 +1263,15 @@ static ID3D11BlendState *D3D11_INTERNAL_FetchBlendState(
     blendDesc.AlphaToCoverageEnable = FALSE;
     blendDesc.IndependentBlendEnable = TRUE;
 
-    for (Uint32 i = 0; i < numColorAttachments; i += 1) {
-        blendDesc.RenderTarget[i].BlendEnable = colorAttachments[i].blend_state.enable_blend;
-        blendDesc.RenderTarget[i].BlendOp = SDLToD3D11_BlendOp[colorAttachments[i].blend_state.color_blend_op];
-        blendDesc.RenderTarget[i].BlendOpAlpha = SDLToD3D11_BlendOp[colorAttachments[i].blend_state.alpha_blend_op];
-        blendDesc.RenderTarget[i].DestBlend = SDLToD3D11_BlendFactor[colorAttachments[i].blend_state.dst_color_blendfactor];
-        blendDesc.RenderTarget[i].DestBlendAlpha = SDLToD3D11_BlendFactorAlpha[colorAttachments[i].blend_state.dst_alpha_blendfactor];
-        blendDesc.RenderTarget[i].RenderTargetWriteMask = colorAttachments[i].blend_state.color_write_mask;
-        blendDesc.RenderTarget[i].SrcBlend = SDLToD3D11_BlendFactor[colorAttachments[i].blend_state.src_color_blendfactor];
-        blendDesc.RenderTarget[i].SrcBlendAlpha = SDLToD3D11_BlendFactorAlpha[colorAttachments[i].blend_state.src_alpha_blendfactor];
+    for (Uint32 i = 0; i < numColorTargets; i += 1) {
+        blendDesc.RenderTarget[i].BlendEnable = colorTargets[i].blend_state.enable_blend;
+        blendDesc.RenderTarget[i].BlendOp = SDLToD3D11_BlendOp[colorTargets[i].blend_state.color_blend_op];
+        blendDesc.RenderTarget[i].BlendOpAlpha = SDLToD3D11_BlendOp[colorTargets[i].blend_state.alpha_blend_op];
+        blendDesc.RenderTarget[i].DestBlend = SDLToD3D11_BlendFactor[colorTargets[i].blend_state.dst_color_blendfactor];
+        blendDesc.RenderTarget[i].DestBlendAlpha = SDLToD3D11_BlendFactorAlpha[colorTargets[i].blend_state.dst_alpha_blendfactor];
+        blendDesc.RenderTarget[i].RenderTargetWriteMask = colorTargets[i].blend_state.color_write_mask;
+        blendDesc.RenderTarget[i].SrcBlend = SDLToD3D11_BlendFactor[colorTargets[i].blend_state.src_color_blendfactor];
+        blendDesc.RenderTarget[i].SrcBlendAlpha = SDLToD3D11_BlendFactorAlpha[colorTargets[i].blend_state.src_alpha_blendfactor];
     }
 
     res = ID3D11Device_CreateBlendState(
@@ -1531,14 +1531,14 @@ static SDL_GPUGraphicsPipeline *D3D11_CreateGraphicsPipeline(
 
     // Blend
 
-    pipeline->colorAttachmentBlendState = D3D11_INTERNAL_FetchBlendState(
+    pipeline->colorTargetBlendState = D3D11_INTERNAL_FetchBlendState(
         renderer,
-        createinfo->attachment_info.num_color_attachments,
-        createinfo->attachment_info.color_attachment_descriptions);
+        createinfo->target_info.num_color_targets,
+        createinfo->target_info.color_target_descriptions);
 
-    pipeline->numColorAttachments = createinfo->attachment_info.num_color_attachments;
-    for (Sint32 i = 0; i < pipeline->numColorAttachments; i += 1) {
-        pipeline->colorAttachmentFormats[i] = SDLToD3D11_TextureFormat[createinfo->attachment_info.color_attachment_descriptions[i].format];
+    pipeline->numColorTargets = createinfo->target_info.num_color_targets;
+    for (Sint32 i = 0; i < pipeline->numColorTargets; i += 1) {
+        pipeline->colorTargetFormats[i] = SDLToD3D11_TextureFormat[createinfo->target_info.color_target_descriptions[i].format];
     }
 
     // Multisample
@@ -1551,8 +1551,8 @@ static SDL_GPUGraphicsPipeline *D3D11_CreateGraphicsPipeline(
         renderer,
         createinfo->depth_stencil_state);
 
-    pipeline->hasDepthStencilAttachment = createinfo->attachment_info.has_depth_stencil_attachment;
-    pipeline->depthStencilAttachmentFormat = SDLToD3D11_TextureFormat[createinfo->attachment_info.depth_stencil_format];
+    pipeline->hasDepthStencilTarget = createinfo->target_info.has_depth_stencil_target;
+    pipeline->depthStencilTargetFormat = SDLToD3D11_TextureFormat[createinfo->target_info.depth_stencil_format];
 
     // Rasterizer
 
@@ -3430,7 +3430,7 @@ static void D3D11_SetBlendConstants(
     if (d3d11CommandBuffer->graphicsPipeline != NULL) {
         ID3D11DeviceContext_OMSetBlendState(
             d3d11CommandBuffer->context,
-            d3d11CommandBuffer->graphicsPipeline->colorAttachmentBlendState,
+            d3d11CommandBuffer->graphicsPipeline->colorTargetBlendState,
             blendFactor,
             d3d11CommandBuffer->graphicsPipeline->multisampleState.sample_mask);
     }
@@ -3454,9 +3454,9 @@ static void D3D11_SetStencilReference(
 
 static void D3D11_BeginRenderPass(
     SDL_GPUCommandBuffer *commandBuffer,
-    const SDL_GPUColorAttachmentInfo *colorAttachmentInfos,
-    Uint32 numColorAttachments,
-    const SDL_GPUDepthStencilAttachmentInfo *depthStencilAttachmentInfo)
+    const SDL_GPUColorTargetInfo *colorTargetInfos,
+    Uint32 numColorTargets,
+    const SDL_GPUDepthStencilTargetInfo *depthStencilTargetInfo)
 {
     D3D11CommandBuffer *d3d11CommandBuffer = (D3D11CommandBuffer *)commandBuffer;
     D3D11Renderer *renderer = (D3D11Renderer *)d3d11CommandBuffer->renderer;
@@ -3481,14 +3481,14 @@ static void D3D11_BeginRenderPass(
     }
 
     // Set up the new color target bindings
-    for (Uint32 i = 0; i < numColorAttachments; i += 1) {
-        D3D11TextureContainer *container = (D3D11TextureContainer *)colorAttachmentInfos[i].texture;
+    for (Uint32 i = 0; i < numColorTargets; i += 1) {
+        D3D11TextureContainer *container = (D3D11TextureContainer *)colorTargetInfos[i].texture;
         D3D11TextureSubresource *subresource = D3D11_INTERNAL_PrepareTextureSubresourceForWrite(
             renderer,
             container,
-            container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? 0 : colorAttachmentInfos[i].layer_or_depth_plane,
-            colorAttachmentInfos[i].mip_level,
-            colorAttachmentInfos[i].cycle);
+            container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? 0 : colorTargetInfos[i].layer_or_depth_plane,
+            colorTargetInfos[i].mip_level,
+            colorTargetInfos[i].cycle);
 
         if (subresource->msaaHandle != NULL) {
             d3d11CommandBuffer->colorTargetResolveTexture[i] = subresource->parent;
@@ -3498,16 +3498,16 @@ static void D3D11_BeginRenderPass(
 
             rtvs[i] = subresource->msaaTargetView;
         } else {
-            Uint32 rtvIndex = container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? colorAttachmentInfos[i].layer_or_depth_plane : 0;
+            Uint32 rtvIndex = container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? colorTargetInfos[i].layer_or_depth_plane : 0;
             rtvs[i] = subresource->colorTargetViews[rtvIndex];
         }
 
-        if (colorAttachmentInfos[i].load_op == SDL_GPU_LOADOP_CLEAR) {
+        if (colorTargetInfos[i].load_op == SDL_GPU_LOADOP_CLEAR) {
             float clearColor[] = {
-                colorAttachmentInfos[i].clear_color.r,
-                colorAttachmentInfos[i].clear_color.g,
-                colorAttachmentInfos[i].clear_color.b,
-                colorAttachmentInfos[i].clear_color.a
+                colorTargetInfos[i].clear_color.r,
+                colorTargetInfos[i].clear_color.g,
+                colorTargetInfos[i].clear_color.b,
+                colorTargetInfos[i].clear_color.a
             };
             ID3D11DeviceContext_ClearRenderTargetView(
                 d3d11CommandBuffer->context,
@@ -3520,15 +3520,15 @@ static void D3D11_BeginRenderPass(
             subresource->parent);
     }
 
-    // Get the DSV for the depth stencil attachment, if applicable
-    if (depthStencilAttachmentInfo != NULL) {
-        D3D11TextureContainer *container = (D3D11TextureContainer *)depthStencilAttachmentInfo->texture;
+    // Get the DSV for the depth stencil target, if applicable
+    if (depthStencilTargetInfo != NULL) {
+        D3D11TextureContainer *container = (D3D11TextureContainer *)depthStencilTargetInfo->texture;
         D3D11TextureSubresource *subresource = D3D11_INTERNAL_PrepareTextureSubresourceForWrite(
             renderer,
             container,
             0,
             0,
-            depthStencilAttachmentInfo->cycle);
+            depthStencilTargetInfo->cycle);
 
         dsv = subresource->depthStencilTargetView;
 
@@ -3540,16 +3540,16 @@ static void D3D11_BeginRenderPass(
     // Actually set the RTs
     ID3D11DeviceContext_OMSetRenderTargets(
         d3d11CommandBuffer->context,
-        numColorAttachments,
-        numColorAttachments > 0 ? rtvs : NULL,
+        numColorTargets,
+        numColorTargets > 0 ? rtvs : NULL,
         dsv);
 
-    if (depthStencilAttachmentInfo != NULL) {
+    if (depthStencilTargetInfo != NULL) {
         D3D11_CLEAR_FLAG dsClearFlags = 0;
-        if (depthStencilAttachmentInfo->load_op == SDL_GPU_LOADOP_CLEAR) {
+        if (depthStencilTargetInfo->load_op == SDL_GPU_LOADOP_CLEAR) {
             dsClearFlags |= D3D11_CLEAR_DEPTH;
         }
-        if (depthStencilAttachmentInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
+        if (depthStencilTargetInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
             dsClearFlags |= D3D11_CLEAR_STENCIL;
         }
 
@@ -3558,16 +3558,16 @@ static void D3D11_BeginRenderPass(
                 d3d11CommandBuffer->context,
                 dsv,
                 dsClearFlags,
-                depthStencilAttachmentInfo->clear_value.depth,
-                depthStencilAttachmentInfo->clear_value.stencil);
+                depthStencilTargetInfo->clear_value.depth,
+                depthStencilTargetInfo->clear_value.stencil);
         }
     }
 
-    // The viewport cannot be larger than the smallest attachment.
-    for (Uint32 i = 0; i < numColorAttachments; i += 1) {
-        D3D11TextureContainer *container = (D3D11TextureContainer *)colorAttachmentInfos[i].texture;
-        Uint32 w = container->header.info.width >> colorAttachmentInfos[i].mip_level;
-        Uint32 h = container->header.info.height >> colorAttachmentInfos[i].mip_level;
+    // The viewport cannot be larger than the smallest target.
+    for (Uint32 i = 0; i < numColorTargets; i += 1) {
+        D3D11TextureContainer *container = (D3D11TextureContainer *)colorTargetInfos[i].texture;
+        Uint32 w = container->header.info.width >> colorTargetInfos[i].mip_level;
+        Uint32 h = container->header.info.height >> colorTargetInfos[i].mip_level;
 
         if (w < vpWidth) {
             vpWidth = w;
@@ -3578,8 +3578,8 @@ static void D3D11_BeginRenderPass(
         }
     }
 
-    if (depthStencilAttachmentInfo != NULL) {
-        D3D11TextureContainer *container = (D3D11TextureContainer *)depthStencilAttachmentInfo->texture;
+    if (depthStencilTargetInfo != NULL) {
+        D3D11TextureContainer *container = (D3D11TextureContainer *)depthStencilTargetInfo->texture;
         Uint32 w = container->header.info.width;
         Uint32 h = container->header.info.height;
 
@@ -3639,7 +3639,7 @@ static void D3D11_BindGraphicsPipeline(
 
     ID3D11DeviceContext_OMSetBlendState(
         d3d11CommandBuffer->context,
-        pipeline->colorAttachmentBlendState,
+        pipeline->colorTargetBlendState,
         blendFactor,
         pipeline->multisampleState.sample_mask);
 
@@ -5740,7 +5740,7 @@ static void D3D11_INTERNAL_InitBlitPipelines(
     SDL_GPUGraphicsPipelineCreateInfo blitPipelineCreateInfo;
     SDL_GPUGraphicsPipeline *blitPipeline;
     SDL_GPUSamplerCreateInfo samplerCreateInfo;
-    SDL_GPUColorAttachmentDescription colorAttachmentDesc;
+    SDL_GPUColorTargetDescription colorTargetDesc;
 
     // Fullscreen vertex shader
     SDL_zero(shaderCreateInfo);
@@ -5812,14 +5812,14 @@ static void D3D11_INTERNAL_InitBlitPipelines(
     // BlitFrom2D pipeline
     SDL_zero(blitPipelineCreateInfo);
 
-    SDL_zero(colorAttachmentDesc);
-    colorAttachmentDesc.blend_state.color_write_mask = 0xF;
-    colorAttachmentDesc.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; // format doesn't matter in d3d11
+    SDL_zero(colorTargetDesc);
+    colorTargetDesc.blend_state.color_write_mask = 0xF;
+    colorTargetDesc.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM; // format doesn't matter in d3d11
 
-    blitPipelineCreateInfo.attachment_info.color_attachment_descriptions = &colorAttachmentDesc;
-    blitPipelineCreateInfo.attachment_info.num_color_attachments = 1;
-    blitPipelineCreateInfo.attachment_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM; // arbitrary
-    blitPipelineCreateInfo.attachment_info.has_depth_stencil_attachment = false;
+    blitPipelineCreateInfo.target_info.color_target_descriptions = &colorTargetDesc;
+    blitPipelineCreateInfo.target_info.num_color_targets = 1;
+    blitPipelineCreateInfo.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D16_UNORM; // arbitrary
+    blitPipelineCreateInfo.target_info.has_depth_stencil_target = false;
 
     blitPipelineCreateInfo.vertex_shader = fullscreenVertexShader;
     blitPipelineCreateInfo.fragment_shader = blitFrom2DPixelShader;

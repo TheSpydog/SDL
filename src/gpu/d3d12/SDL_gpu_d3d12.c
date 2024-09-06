@@ -657,8 +657,8 @@ struct D3D12CommandBuffer
     Uint32 presentDataCount;
     Uint32 presentDataCapacity;
 
-    Uint32 colorAttachmentTextureSubresourceCount;
-    D3D12TextureSubresource *colorAttachmentTextureSubresources[MAX_COLOR_TARGET_BINDINGS];
+    Uint32 colorTargetTextureSubresourceCount;
+    D3D12TextureSubresource *colorTargetTextureSubresources[MAX_COLOR_TARGET_BINDINGS];
     D3D12TextureSubresource *depthStencilTextureSubresource;
     D3D12GraphicsPipeline *currentGraphicsPipeline;
     D3D12ComputePipeline *currentComputePipeline;
@@ -2407,10 +2407,10 @@ static bool D3D12_INTERNAL_ConvertBlendState(
         rtBlendDesc.LogicOp = D3D12_LOGIC_OP_NOOP;
         rtBlendDesc.RenderTargetWriteMask = D3D12_COLOR_WRITE_ENABLE_ALL;
 
-        // If attachment_info has more blend states, you can set IndependentBlendEnable to TRUE and assign different blend states to each render target slot
-        if (i < pipelineInfo->attachment_info.num_color_attachments) {
+        // If target_info has more blend states, you can set IndependentBlendEnable to TRUE and assign different blend states to each render target slot
+        if (i < pipelineInfo->target_info.num_color_targets) {
 
-            SDL_GPUColorAttachmentBlendState sdlBlendState = pipelineInfo->attachment_info.color_attachment_descriptions[i].blend_state;
+            SDL_GPUColorTargetBlendState sdlBlendState = pipelineInfo->target_info.color_target_descriptions[i].blend_state;
 
             rtBlendDesc.BlendEnable = sdlBlendState.enable_blend;
             rtBlendDesc.SrcBlend = SDLToD3D12_BlendFactor[sdlBlendState.src_color_blendfactor];
@@ -2554,10 +2554,10 @@ static SDL_GPUGraphicsPipeline *D3D12_CreateGraphicsPipeline(
     psoDesc.SampleDesc.Count = SDLToD3D12_SampleCount[createinfo->multisample_state.sample_count];
     psoDesc.SampleDesc.Quality = 0;
 
-    psoDesc.DSVFormat = SDLToD3D12_TextureFormat[createinfo->attachment_info.depth_stencil_format];
-    psoDesc.NumRenderTargets = createinfo->attachment_info.num_color_attachments;
-    for (uint32_t i = 0; i < createinfo->attachment_info.num_color_attachments; i += 1) {
-        psoDesc.RTVFormats[i] = SDLToD3D12_TextureFormat[createinfo->attachment_info.color_attachment_descriptions[i].format];
+    psoDesc.DSVFormat = SDLToD3D12_TextureFormat[createinfo->target_info.depth_stencil_format];
+    psoDesc.NumRenderTargets = createinfo->target_info.num_color_targets;
+    for (uint32_t i = 0; i < createinfo->target_info.num_color_targets; i += 1) {
+        psoDesc.RTVFormats[i] = SDLToD3D12_TextureFormat[createinfo->target_info.color_target_descriptions[i].format];
     }
 
     // Assuming some default values or further initialization
@@ -3787,21 +3787,21 @@ static D3D12Buffer *D3D12_INTERNAL_PrepareBufferForWrite(
 
 static void D3D12_BeginRenderPass(
     SDL_GPUCommandBuffer *commandBuffer,
-    const SDL_GPUColorAttachmentInfo *colorAttachmentInfos,
-    Uint32 numColorAttachments,
-    const SDL_GPUDepthStencilAttachmentInfo *depthStencilAttachmentInfo)
+    const SDL_GPUColorTargetInfo *colorTargetInfos,
+    Uint32 numColorTargets,
+    const SDL_GPUDepthStencilTargetInfo *depthStencilTargetInfo)
 {
     D3D12CommandBuffer *d3d12CommandBuffer = (D3D12CommandBuffer *)commandBuffer;
 
     Uint32 framebufferWidth = SDL_MAX_UINT32;
     Uint32 framebufferHeight = SDL_MAX_UINT32;
 
-    for (Uint32 i = 0; i < numColorAttachments; i += 1) {
-        D3D12TextureContainer *container = (D3D12TextureContainer *)colorAttachmentInfos[i].texture;
-        Uint32 h = container->header.info.height >> colorAttachmentInfos[i].mip_level;
-        Uint32 w = container->header.info.width >> colorAttachmentInfos[i].mip_level;
+    for (Uint32 i = 0; i < numColorTargets; i += 1) {
+        D3D12TextureContainer *container = (D3D12TextureContainer *)colorTargetInfos[i].texture;
+        Uint32 h = container->header.info.height >> colorTargetInfos[i].mip_level;
+        Uint32 w = container->header.info.width >> colorTargetInfos[i].mip_level;
 
-        // The framebuffer cannot be larger than the smallest attachment.
+        // The framebuffer cannot be larger than the smallest target.
 
         if (w < framebufferWidth) {
             framebufferWidth = w;
@@ -3812,18 +3812,18 @@ static void D3D12_BeginRenderPass(
         }
 
         if (!(container->header.info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
-            SDL_LogError(SDL_LOG_CATEGORY_GPU, "Color attachment texture was not designated as a color target!");
+            SDL_LogError(SDL_LOG_CATEGORY_GPU, "Color target texture was not designated as a color target!");
             return;
         }
     }
 
-    if (depthStencilAttachmentInfo != NULL) {
-        D3D12TextureContainer *container = (D3D12TextureContainer *)depthStencilAttachmentInfo->texture;
+    if (depthStencilTargetInfo != NULL) {
+        D3D12TextureContainer *container = (D3D12TextureContainer *)depthStencilTargetInfo->texture;
 
         Uint32 h = container->header.info.height;
         Uint32 w = container->header.info.width;
 
-        // The framebuffer cannot be larger than the smallest attachment.
+        // The framebuffer cannot be larger than the smallest target.
 
         if (w < framebufferWidth) {
             framebufferWidth = w;
@@ -3835,33 +3835,33 @@ static void D3D12_BeginRenderPass(
 
         // Fixme:
         if (!(container->header.info.usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
-            SDL_LogError(SDL_LOG_CATEGORY_GPU, "Depth stencil attachment texture was not designated as a depth target!");
+            SDL_LogError(SDL_LOG_CATEGORY_GPU, "Depth stencil target texture was not designated as a depth target!");
             return;
         }
     }
 
     D3D12_CPU_DESCRIPTOR_HANDLE rtvs[MAX_COLOR_TARGET_BINDINGS];
 
-    for (Uint32 i = 0; i < numColorAttachments; i += 1) {
-        D3D12TextureContainer *container = (D3D12TextureContainer *)colorAttachmentInfos[i].texture;
+    for (Uint32 i = 0; i < numColorTargets; i += 1) {
+        D3D12TextureContainer *container = (D3D12TextureContainer *)colorTargetInfos[i].texture;
         D3D12TextureSubresource *subresource = D3D12_INTERNAL_PrepareTextureSubresourceForWrite(
             d3d12CommandBuffer,
             container,
-            container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? 0 : colorAttachmentInfos[i].layer_or_depth_plane,
-            colorAttachmentInfos[i].mip_level,
-            colorAttachmentInfos[i].cycle,
+            container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? 0 : colorTargetInfos[i].layer_or_depth_plane,
+            colorTargetInfos[i].mip_level,
+            colorTargetInfos[i].cycle,
             D3D12_RESOURCE_STATE_RENDER_TARGET);
 
-        Uint32 rtvIndex = container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? colorAttachmentInfos[i].layer_or_depth_plane : 0;
+        Uint32 rtvIndex = container->header.info.type == SDL_GPU_TEXTURETYPE_3D ? colorTargetInfos[i].layer_or_depth_plane : 0;
         D3D12_CPU_DESCRIPTOR_HANDLE rtv =
             subresource->rtvHandles[rtvIndex].cpuHandle;
 
-        if (colorAttachmentInfos[i].load_op == SDL_GPU_LOADOP_CLEAR) {
+        if (colorTargetInfos[i].load_op == SDL_GPU_LOADOP_CLEAR) {
             float clearColor[4];
-            clearColor[0] = colorAttachmentInfos[i].clear_color.r;
-            clearColor[1] = colorAttachmentInfos[i].clear_color.g;
-            clearColor[2] = colorAttachmentInfos[i].clear_color.b;
-            clearColor[3] = colorAttachmentInfos[i].clear_color.a;
+            clearColor[0] = colorTargetInfos[i].clear_color.r;
+            clearColor[1] = colorTargetInfos[i].clear_color.g;
+            clearColor[2] = colorTargetInfos[i].clear_color.b;
+            clearColor[3] = colorTargetInfos[i].clear_color.a;
 
             ID3D12GraphicsCommandList_ClearRenderTargetView(
                 d3d12CommandBuffer->graphicsCommandList,
@@ -3872,32 +3872,32 @@ static void D3D12_BeginRenderPass(
         }
 
         rtvs[i] = rtv;
-        d3d12CommandBuffer->colorAttachmentTextureSubresources[i] = subresource;
+        d3d12CommandBuffer->colorTargetTextureSubresources[i] = subresource;
 
         D3D12_INTERNAL_TrackTexture(d3d12CommandBuffer, subresource->parent);
     }
 
-    d3d12CommandBuffer->colorAttachmentTextureSubresourceCount = numColorAttachments;
+    d3d12CommandBuffer->colorTargetTextureSubresourceCount = numColorTargets;
 
     D3D12_CPU_DESCRIPTOR_HANDLE dsv;
-    if (depthStencilAttachmentInfo != NULL) {
-        D3D12TextureContainer *container = (D3D12TextureContainer *)depthStencilAttachmentInfo->texture;
+    if (depthStencilTargetInfo != NULL) {
+        D3D12TextureContainer *container = (D3D12TextureContainer *)depthStencilTargetInfo->texture;
         D3D12TextureSubresource *subresource = D3D12_INTERNAL_PrepareTextureSubresourceForWrite(
             d3d12CommandBuffer,
             container,
             0,
             0,
-            depthStencilAttachmentInfo->cycle,
+            depthStencilTargetInfo->cycle,
             D3D12_RESOURCE_STATE_DEPTH_WRITE);
 
         if (
-            depthStencilAttachmentInfo->load_op == SDL_GPU_LOADOP_CLEAR ||
-            depthStencilAttachmentInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
+            depthStencilTargetInfo->load_op == SDL_GPU_LOADOP_CLEAR ||
+            depthStencilTargetInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
             D3D12_CLEAR_FLAGS clearFlags = (D3D12_CLEAR_FLAGS)0;
-            if (depthStencilAttachmentInfo->load_op == SDL_GPU_LOADOP_CLEAR) {
+            if (depthStencilTargetInfo->load_op == SDL_GPU_LOADOP_CLEAR) {
                 clearFlags |= D3D12_CLEAR_FLAG_DEPTH;
             }
-            if (depthStencilAttachmentInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
+            if (depthStencilTargetInfo->stencil_load_op == SDL_GPU_LOADOP_CLEAR) {
                 clearFlags |= D3D12_CLEAR_FLAG_STENCIL;
             }
 
@@ -3905,8 +3905,8 @@ static void D3D12_BeginRenderPass(
                 d3d12CommandBuffer->graphicsCommandList,
                 subresource->dsvHandle.cpuHandle,
                 clearFlags,
-                depthStencilAttachmentInfo->clear_value.depth,
-                depthStencilAttachmentInfo->clear_value.stencil,
+                depthStencilTargetInfo->clear_value.depth,
+                depthStencilTargetInfo->clear_value.stencil,
                 0,
                 NULL);
         }
@@ -3918,10 +3918,10 @@ static void D3D12_BeginRenderPass(
 
     ID3D12GraphicsCommandList_OMSetRenderTargets(
         d3d12CommandBuffer->graphicsCommandList,
-        numColorAttachments,
+        numColorTargets,
         rtvs,
         false,
-        (depthStencilAttachmentInfo == NULL) ? NULL : &dsv);
+        (depthStencilTargetInfo == NULL) ? NULL : &dsv);
 
     // Set sensible default states
     SDL_GPUViewport defaultViewport;
@@ -4736,15 +4736,15 @@ static void D3D12_EndRenderPass(
     D3D12CommandBuffer *d3d12CommandBuffer = (D3D12CommandBuffer *)commandBuffer;
     Uint32 i;
 
-    for (i = 0; i < d3d12CommandBuffer->colorAttachmentTextureSubresourceCount; i += 1) {
+    for (i = 0; i < d3d12CommandBuffer->colorTargetTextureSubresourceCount; i += 1) {
         D3D12_INTERNAL_TextureSubresourceTransitionToDefaultUsage(
             d3d12CommandBuffer,
             D3D12_RESOURCE_STATE_RENDER_TARGET,
-            d3d12CommandBuffer->colorAttachmentTextureSubresources[i]);
+            d3d12CommandBuffer->colorTargetTextureSubresources[i]);
 
-        d3d12CommandBuffer->colorAttachmentTextureSubresources[i] = NULL;
+        d3d12CommandBuffer->colorTargetTextureSubresources[i] = NULL;
     }
-    d3d12CommandBuffer->colorAttachmentTextureSubresourceCount = 0;
+    d3d12CommandBuffer->colorTargetTextureSubresourceCount = 0;
 
     if (d3d12CommandBuffer->depthStencilTextureSubresource != NULL) {
         D3D12_INTERNAL_TextureSubresourceTransitionToDefaultUsage(
@@ -4765,7 +4765,7 @@ static void D3D12_EndRenderPass(
         NULL);
 
     // Reset bind state
-    SDL_zeroa(d3d12CommandBuffer->colorAttachmentTextureSubresources);
+    SDL_zeroa(d3d12CommandBuffer->colorTargetTextureSubresources);
     d3d12CommandBuffer->depthStencilTextureSubresource = NULL;
 
     SDL_zeroa(d3d12CommandBuffer->vertexBuffers);
@@ -6716,8 +6716,8 @@ static SDL_GPUCommandBuffer *D3D12_AcquireCommandBuffer(
     // Set the bind state
     commandBuffer->currentGraphicsPipeline = NULL;
 
-    SDL_zeroa(commandBuffer->colorAttachmentTextureSubresources);
-    commandBuffer->colorAttachmentTextureSubresourceCount = 0;
+    SDL_zeroa(commandBuffer->colorTargetTextureSubresources);
+    commandBuffer->colorTargetTextureSubresourceCount = 0;
     commandBuffer->depthStencilTextureSubresource = NULL;
 
     SDL_zeroa(commandBuffer->vertexBuffers);
