@@ -259,7 +259,7 @@ CreateDepthTexture(Uint32 drawablew, Uint32 drawableh)
     depthtex_createinfo.layer_count_or_depth = 1;
     depthtex_createinfo.num_levels = 1;
     depthtex_createinfo.sample_count = render_state.sample_count;
-    depthtex_createinfo.usage_flags = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    depthtex_createinfo.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
     depthtex_createinfo.props = 0;
 
     result = SDL_CreateGPUTexture(gpu_device, &depthtex_createinfo);
@@ -285,7 +285,7 @@ CreateMSAATexture(Uint32 drawablew, Uint32 drawableh)
     msaatex_createinfo.layer_count_or_depth = 1;
     msaatex_createinfo.num_levels = 1;
     msaatex_createinfo.sample_count = render_state.sample_count;
-    msaatex_createinfo.usage_flags = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    msaatex_createinfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER;
     msaatex_createinfo.props = 0;
 
     result = SDL_CreateGPUTexture(gpu_device, &msaatex_createinfo);
@@ -425,22 +425,22 @@ load_shader(SDL_bool is_vertex)
         createinfo.format = SDL_GPU_SHADERFORMAT_DXBC;
         createinfo.code = is_vertex ? D3D11_CubeVert : D3D11_CubeFrag;
         createinfo.code_size = is_vertex ? SDL_arraysize(D3D11_CubeVert) : SDL_arraysize(D3D11_CubeFrag);
-        createinfo.entrypoint_name = is_vertex ? "VSMain" : "PSMain";
+        createinfo.entrypoint = is_vertex ? "VSMain" : "PSMain";
     } else if (backend == SDL_GPU_DRIVER_D3D12) {
         createinfo.format = SDL_GPU_SHADERFORMAT_DXIL;
         createinfo.code = is_vertex ? D3D12_CubeVert : D3D12_CubeFrag;
         createinfo.code_size = is_vertex ? SDL_arraysize(D3D12_CubeVert) : SDL_arraysize(D3D12_CubeFrag);
-        createinfo.entrypoint_name = is_vertex ? "VSMain" : "PSMain";
+        createinfo.entrypoint = is_vertex ? "VSMain" : "PSMain";
     } else if (backend == SDL_GPU_DRIVER_METAL) {
         createinfo.format = SDL_GPU_SHADERFORMAT_METALLIB;
         createinfo.code = is_vertex ? cube_vert_metallib : cube_frag_metallib;
         createinfo.code_size = is_vertex ? cube_vert_metallib_len : cube_frag_metallib_len;
-        createinfo.entrypoint_name = is_vertex ? "vs_main" : "fs_main";
+        createinfo.entrypoint = is_vertex ? "vs_main" : "fs_main";
     } else {
         createinfo.format = SDL_GPU_SHADERFORMAT_SPIRV;
         createinfo.code = is_vertex ? cube_vert_spv : cube_frag_spv;
         createinfo.code_size = is_vertex ? cube_vert_spv_len : cube_frag_spv_len;
-        createinfo.entrypoint_name = "main";
+        createinfo.entrypoint = "main";
     }
 
     createinfo.stage = is_vertex ? SDL_GPU_SHADERSTAGE_VERTEX : SDL_GPU_SHADERSTAGE_FRAGMENT;
@@ -492,7 +492,7 @@ init_render_state(int msaa)
 
     /* Create buffers */
 
-    buffer_desc.usage_flags = SDL_GPU_BUFFERUSAGE_VERTEX;
+    buffer_desc.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
     buffer_desc.size = sizeof(vertex_data);
     buffer_desc.props = 0;
     render_state.buf_vertex = SDL_CreateGPUBuffer(
