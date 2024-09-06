@@ -843,7 +843,7 @@ struct D3D12Buffer
 
 struct D3D12BufferContainer
 {
-    SDL_GPUBufferUsageFlags usage_flags;
+    SDL_GPUBufferUsageFlags usage;
     Uint32 size;
     D3D12BufferType type;
 
@@ -1489,7 +1489,7 @@ static void D3D12_INTERNAL_TextureSubresourceBarrier(
         destinationState,
         textureSubresource->parent->resource,
         textureSubresource->index,
-        textureSubresource->parent->container->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE);
+        textureSubresource->parent->container->header.info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE);
 }
 
 static D3D12_RESOURCE_STATES D3D12_INTERNAL_DefaultTextureResourceState(
@@ -1522,7 +1522,7 @@ static void D3D12_INTERNAL_TextureSubresourceTransitionFromDefaultUsage(
 {
     D3D12_INTERNAL_TextureSubresourceBarrier(
         commandBuffer,
-        D3D12_INTERNAL_DefaultTextureResourceState(textureSubresource->parent->container->header.info.usage_flags),
+        D3D12_INTERNAL_DefaultTextureResourceState(textureSubresource->parent->container->header.info.usage),
         destinationUsageMode,
         textureSubresource);
 }
@@ -1548,7 +1548,7 @@ static void D3D12_INTERNAL_TextureSubresourceTransitionToDefaultUsage(
     D3D12_INTERNAL_TextureSubresourceBarrier(
         commandBuffer,
         sourceUsageMode,
-        D3D12_INTERNAL_DefaultTextureResourceState(textureSubresource->parent->container->header.info.usage_flags),
+        D3D12_INTERNAL_DefaultTextureResourceState(textureSubresource->parent->container->header.info.usage),
         textureSubresource);
 }
 
@@ -1568,17 +1568,17 @@ static void D3D12_INTERNAL_TextureTransitionToDefaultUsage(
 static D3D12_RESOURCE_STATES D3D12_INTERNAL_DefaultBufferResourceState(
     D3D12Buffer *buffer)
 {
-    if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_VERTEX) {
+    if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_VERTEX) {
         return D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER;
-    } else if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_INDEX) {
+    } else if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_INDEX) {
         return D3D12_RESOURCE_STATE_INDEX_BUFFER;
-    } else if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_INDIRECT) {
+    } else if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_INDIRECT) {
         return D3D12_RESOURCE_STATE_INDIRECT_ARGUMENT;
-    } else if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ) {
+    } else if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_GRAPHICS_STORAGE_READ) {
         return D3D12_RESOURCE_STATE_ALL_SHADER_RESOURCE;
-    } else if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ) {
+    } else if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_READ) {
         return D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE;
-    } else if (buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE) {
+    } else if (buffer->container->usage & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE) {
         return D3D12_RESOURCE_STATE_UNORDERED_ACCESS;
     } else {
         SDL_LogError(SDL_LOG_CATEGORY_GPU, "Buffer has no default usage mode!");
@@ -1598,7 +1598,7 @@ static void D3D12_INTERNAL_BufferBarrier(
         destinationState,
         buffer->handle,
         0,
-        buffer->container->usage_flags & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE);
+        buffer->container->usage & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE);
 
     buffer->transitioned = true;
 }
@@ -2285,7 +2285,7 @@ static SDL_GPUComputePipeline *D3D12_CreateComputePipeline(
             createinfo->format,
             createinfo->code,
             createinfo->code_size,
-            createinfo->entrypoint_name,
+            createinfo->entrypoint,
             &bytecode,
             &bytecodeSize)) {
         return NULL;
@@ -2352,7 +2352,7 @@ static bool D3D12_INTERNAL_ConvertRasterizerState(SDL_GPURasterizerState rasteri
     desc->FillMode = SDLToD3D12_FillMode[rasterizerState.fill_mode];
     desc->CullMode = SDLToD3D12_CullMode[rasterizerState.cull_mode];
 
-    switch (rasterizerState.frontFace) {
+    switch (rasterizerState.front_face) {
     case SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE:
         desc->FrontCounterClockwise = TRUE;
         break;
@@ -2675,7 +2675,7 @@ static SDL_GPUShader *D3D12_CreateShader(
             createinfo->format,
             createinfo->code,
             createinfo->code_size,
-            createinfo->entrypoint_name,
+            createinfo->entrypoint,
             &bytecode,
             &bytecodeSize)) {
         return NULL;
@@ -2720,7 +2720,7 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
     Uint32 layerCount = createinfo->type == SDL_GPU_TEXTURETYPE_3D ? 1 : createinfo->layer_count_or_depth;
     Uint32 depth = createinfo->type == SDL_GPU_TEXTURETYPE_3D ? createinfo->layer_count_or_depth : 1;
 
-    if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) {
+    if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) {
         resourceFlags |= D3D12_RESOURCE_FLAG_ALLOW_RENDER_TARGET;
         useClearValue = true;
         clearValue.Color[0] = SDL_GetFloatProperty(createinfo->props, SDL_PROP_GPU_CREATETEXTURE_D3D12_CLEAR_R_FLOAT, 0);
@@ -2729,14 +2729,14 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
         clearValue.Color[3] = SDL_GetFloatProperty(createinfo->props, SDL_PROP_GPU_CREATETEXTURE_D3D12_CLEAR_A_FLOAT, 0);
     }
 
-    if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
+    if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
         resourceFlags |= D3D12_RESOURCE_FLAG_ALLOW_DEPTH_STENCIL;
         useClearValue = true;
         clearValue.DepthStencil.Depth = SDL_GetFloatProperty(createinfo->props, SDL_PROP_GPU_CREATETEXTURE_D3D12_CLEAR_DEPTH_FLOAT, 0);
         clearValue.DepthStencil.Stencil = (UINT8)SDL_GetNumberProperty(createinfo->props, SDL_PROP_GPU_CREATETEXTURE_D3D12_CLEAR_STENCIL_UINT8, 0);
     }
 
-    if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) {
+    if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) {
         resourceFlags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
 
@@ -2774,7 +2774,7 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
         desc.Flags = resourceFlags;
     }
 
-    initialState = isSwapchainTexture ? D3D12_RESOURCE_STATE_PRESENT : D3D12_INTERNAL_DefaultTextureResourceState(createinfo->usage_flags);
+    initialState = isSwapchainTexture ? D3D12_RESOURCE_STATE_PRESENT : D3D12_INTERNAL_DefaultTextureResourceState(createinfo->usage);
     clearValue.Format = desc.Format;
 
     res = ID3D12Device_CreateCommittedResource(
@@ -2795,9 +2795,9 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
     texture->resource = handle;
 
     // Create the SRV if applicable
-    if ((createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER) ||
-        (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) ||
-        (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ)) {
+    if ((createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) ||
+        (createinfo->usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) ||
+        (createinfo->usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ)) {
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc;
 
         D3D12_INTERNAL_AssignCpuDescriptorHandle(
@@ -2868,7 +2868,7 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
             texture->subresources[subresourceIndex].dsvHandle.heap = NULL;
 
             // Create RTV if needed
-            if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) {
+            if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) {
                 texture->subresources[subresourceIndex].rtvHandles = (D3D12CPUDescriptor *)SDL_calloc(depth, sizeof(D3D12CPUDescriptor));
 
                 for (Uint32 depthIndex = 0; depthIndex < depth; depthIndex += 1) {
@@ -2907,7 +2907,7 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
             }
 
             // Create DSV if needed
-            if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
+            if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
                 D3D12_DEPTH_STENCIL_VIEW_DESC dsvDesc;
 
                 D3D12_INTERNAL_AssignCpuDescriptorHandle(
@@ -2928,7 +2928,7 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
             }
 
             // Create subresource UAV if necessary
-            if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) {
+            if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) {
                 D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc;
 
                 D3D12_INTERNAL_AssignCpuDescriptorHandle(
@@ -3038,7 +3038,7 @@ static D3D12Buffer *D3D12_INTERNAL_CreateBuffer(
         resourceFlags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
     }
 #if (defined(SDL_PLATFORM_XBOXONE) || defined(SDL_PLATFORM_XBOXSERIES))
-    if (usage_flags & SDL_GPU_BUFFERUSAGE_INDIRECT) {
+    if (usage & SDL_GPU_BUFFERUSAGE_INDIRECT) {
         resourceFlags |= D3D12XBOX_RESOURCE_FLAG_ALLOW_INDIRECT_BUFFER;
     }
 #endif
@@ -3221,7 +3221,7 @@ static D3D12BufferContainer *D3D12_INTERNAL_CreateBufferContainer(
         return NULL;
     }
 
-    container->usage_flags = usageFlags;
+    container->usage = usageFlags;
     container->size = size;
     container->type = type;
 
@@ -3585,8 +3585,8 @@ static void D3D12_SetViewport(
     d3d12Viewport.TopLeftY = viewport->y;
     d3d12Viewport.Width = viewport->w;
     d3d12Viewport.Height = viewport->h;
-    d3d12Viewport.MinDepth = viewport->minDepth;
-    d3d12Viewport.MaxDepth = viewport->maxDepth;
+    d3d12Viewport.MinDepth = viewport->min_depth;
+    d3d12Viewport.MaxDepth = viewport->max_depth;
     ID3D12GraphicsCommandList_RSSetViewports(d3d12CommandBuffer->graphicsCommandList, 1, &d3d12Viewport);
 }
 
@@ -3732,7 +3732,7 @@ static void D3D12_INTERNAL_CycleActiveBuffer(
     // No buffer handle is available, create a new one.
     D3D12Buffer *buffer = D3D12_INTERNAL_CreateBuffer(
         renderer,
-        container->usage_flags,
+        container->usage,
         container->size,
         container->type);
 
@@ -3811,7 +3811,7 @@ static void D3D12_BeginRenderPass(
             framebufferHeight = h;
         }
 
-        if (!(container->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
+        if (!(container->header.info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "Color attachment texture was not designated as a color target!");
             return;
         }
@@ -3834,7 +3834,7 @@ static void D3D12_BeginRenderPass(
         }
 
         // Fixme:
-        if (!(container->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+        if (!(container->header.info.usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "Depth stencil attachment texture was not designated as a depth target!");
             return;
         }
@@ -3929,8 +3929,8 @@ static void D3D12_BeginRenderPass(
     defaultViewport.y = 0;
     defaultViewport.w = (float)framebufferWidth;
     defaultViewport.h = (float)framebufferHeight;
-    defaultViewport.minDepth = 0;
-    defaultViewport.maxDepth = 1;
+    defaultViewport.min_depth = 0;
+    defaultViewport.max_depth = 1;
 
     D3D12_SetViewport(
         commandBuffer,
@@ -4192,17 +4192,17 @@ static void D3D12_BindVertexBuffers(
 
 static void D3D12_BindIndexBuffer(
     SDL_GPUCommandBuffer *commandBuffer,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize indexElementSize)
 {
     D3D12CommandBuffer *d3d12CommandBuffer = (D3D12CommandBuffer *)commandBuffer;
-    D3D12Buffer *buffer = ((D3D12BufferContainer *)pBinding->buffer)->activeBuffer;
+    D3D12Buffer *buffer = ((D3D12BufferContainer *)binding->buffer)->activeBuffer;
     D3D12_INDEX_BUFFER_VIEW view;
 
     D3D12_INTERNAL_TrackBuffer(d3d12CommandBuffer, buffer);
 
-    view.BufferLocation = buffer->virtualAddress + pBinding->offset;
-    view.SizeInBytes = buffer->container->size - pBinding->offset;
+    view.BufferLocation = buffer->virtualAddress + binding->offset;
+    view.SizeInBytes = buffer->container->size - binding->offset;
     view.Format =
         indexElementSize == SDL_GPU_INDEXELEMENTSIZE_16BIT ? DXGI_FORMAT_R16_UINT : DXGI_FORMAT_R32_UINT;
 
@@ -4804,7 +4804,7 @@ static void D3D12_BeginComputePass(
     if (numStorageTextureBindings > 0) {
         for (Uint32 i = 0; i < numStorageTextureBindings; i += 1) {
             D3D12TextureContainer *container = (D3D12TextureContainer *)storageTextureBindings[i].texture;
-            if (!(container->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE)) {
+            if (!(container->header.info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE)) {
                 SDL_LogError(SDL_LOG_CATEGORY_GPU, "Attempted to bind read-only texture as compute write texture");
             }
 
@@ -4827,7 +4827,7 @@ static void D3D12_BeginComputePass(
     if (numStorageBufferBindings > 0) {
         for (Uint32 i = 0; i < numStorageBufferBindings; i += 1) {
             D3D12BufferContainer *container = (D3D12BufferContainer *)storageBufferBindings[i].buffer;
-            if (!(container->usage_flags & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE)) {
+            if (!(container->usage & SDL_GPU_BUFFERUSAGE_COMPUTE_STORAGE_WRITE)) {
                 SDL_LogError(SDL_LOG_CATEGORY_GPU, "Attempted to bind read-only texture as compute write texture");
             }
             D3D12Buffer *buffer = D3D12_INTERNAL_PrepareBufferForWrite(
@@ -5914,7 +5914,7 @@ static bool D3D12_INTERNAL_CreateSwapchain(
     createInfo.width = width;
     createInfo.height = height;
     createInfo.format = SwapchainCompositionToSDLTextureFormat[swapchain_composition];
-    createInfo.usage_flags = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    createInfo.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     createInfo.layer_count_or_depth = 1;
     createInfo.num_levels = 1;
 
@@ -6051,7 +6051,7 @@ static bool D3D12_INTERNAL_InitializeSwapchainTexture(
     pTextureContainer->header.info.layer_count_or_depth = 1;
     pTextureContainer->header.info.num_levels = 1;
     pTextureContainer->header.info.type = SDL_GPU_TEXTURETYPE_2D;
-    pTextureContainer->header.info.usage_flags = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    pTextureContainer->header.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     pTextureContainer->header.info.sample_count = SDL_GPU_SAMPLECOUNT_1;
     pTextureContainer->header.info.format = SwapchainCompositionToSDLTextureFormat[composition];
 
@@ -7424,7 +7424,7 @@ static void D3D12_INTERNAL_InitBlitResources(
     shaderCreateInfo.code_size = sizeof(D3D12_FullscreenVert);
     shaderCreateInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
     shaderCreateInfo.format = SDL_GPU_SHADERFORMAT_DXBC;
-    shaderCreateInfo.entrypoint_name = "main";
+    shaderCreateInfo.entrypoint = "main";
 
     renderer->blitVertexShader = D3D12_CreateShader(
         (SDL_GPURenderer *)renderer,

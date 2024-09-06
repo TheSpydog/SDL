@@ -414,7 +414,7 @@ struct SDL_GPUDevice
 
     void (*BindIndexBuffer)(
         SDL_GPUCommandBuffer *commandBuffer,
-        const SDL_GPUBufferBinding *pBinding,
+        const SDL_GPUBufferBinding *binding,
         SDL_GPUIndexElementSize indexElementSize);
 
     void (*BindVertexSamplers)(

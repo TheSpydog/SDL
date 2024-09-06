@@ -2355,12 +2355,12 @@ static void METAL_BindVertexBuffers(
 
 static void METAL_BindIndexBuffer(
     SDL_GPUCommandBuffer *command_buffer,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize index_element_size)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)command_buffer;
-    metalCommandBuffer->indexBuffer = ((MetalBufferContainer *)pBinding->buffer)->activeBuffer;
-    metalCommandBuffer->indexBufferOffset = pBinding->offset;
+    metalCommandBuffer->indexBuffer = ((MetalBufferContainer *)binding->buffer)->activeBuffer;
+    metalCommandBuffer->indexBufferOffset = binding->offset;
     metalCommandBuffer->index_element_size = index_element_size;
 
     METAL_INTERNAL_TrackBuffer(metalCommandBuffer, metalCommandBuffer->indexBuffer);

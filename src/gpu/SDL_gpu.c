@@ -295,8 +295,8 @@ void SDL_GPU_BlitCommon(
     viewport.y = (float)destination->y;
     viewport.w = (float)destination->w;
     viewport.h = (float)destination->h;
-    viewport.minDepth = 0;
-    viewport.maxDepth = 1;
+    viewport.min_depth = 0;
+    viewport.max_depth = 1;
 
     SDL_SetGPUViewport(
         render_pass,
@@ -726,16 +726,16 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
             SDL_assert_release(!"For any texture: num_levels must be >= 1");
             failed = true;
         }
-        if ((createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) && (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
-            SDL_assert_release(!"For any texture: usage_flags cannot contain both GRAPHICS_STORAGE_READ and SAMPLER");
+        if ((createinfo->usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) && (createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+            SDL_assert_release(!"For any texture: usage cannot contain both GRAPHICS_STORAGE_READ and SAMPLER");
             failed = true;
         }
-        if (IsDepthFormat(createinfo->format) && (createinfo->usage_flags & ~(SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER))) {
-            SDL_assert_release(!"For depth textures: usage_flags cannot contain any flags except for DEPTH_STENCIL_TARGET and SAMPLER");
+        if (IsDepthFormat(createinfo->format) && (createinfo->usage & ~(SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET | SDL_GPU_TEXTUREUSAGE_SAMPLER))) {
+            SDL_assert_release(!"For depth textures: usage cannot contain any flags except for DEPTH_STENCIL_TARGET and SAMPLER");
             failed = true;
         }
-        if (IsIntegerFormat(createinfo->format) && (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
-            SDL_assert_release(!"For any texture: usage_flags cannot contain SAMPLER for textures with an integer format");
+        if (IsIntegerFormat(createinfo->format) && (createinfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER)) {
+            SDL_assert_release(!"For any texture: usage cannot contain SAMPLER for textures with an integer format");
             failed = true;
         }
 
@@ -757,8 +757,8 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
                 SDL_assert_release(!"For cube textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
                 failed = true;
             }
-            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_CUBE, createinfo->usage_flags)) {
-                SDL_assert_release(!"For cube textures: the format is unsupported for the given usage_flags");
+            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_CUBE, createinfo->usage)) {
+                SDL_assert_release(!"For cube textures: the format is unsupported for the given usage");
                 failed = true;
             }
         } else if (createinfo->type == SDL_GPU_TEXTURETYPE_3D) {
@@ -767,23 +767,23 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
                 SDL_assert_release(!"For 3D textures: width, height, and layer_count_or_depth must be <= 2048");
                 failed = true;
             }
-            if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
-                SDL_assert_release(!"For 3D textures: usage_flags must not contain DEPTH_STENCIL_TARGET");
+            if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
+                SDL_assert_release(!"For 3D textures: usage must not contain DEPTH_STENCIL_TARGET");
                 failed = true;
             }
             if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
                 SDL_assert_release(!"For 3D textures: sample_count must be SDL_GPU_SAMPLECOUNT_1");
                 failed = true;
             }
-            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_3D, createinfo->usage_flags)) {
-                SDL_assert_release(!"For 3D textures: the format is unsupported for the given usage_flags");
+            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_3D, createinfo->usage)) {
+                SDL_assert_release(!"For 3D textures: the format is unsupported for the given usage");
                 failed = true;
             }
         } else {
             if (createinfo->type == SDL_GPU_TEXTURETYPE_2D_ARRAY) {
                 // Array Texture Validation
-                if (createinfo->usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
-                    SDL_assert_release(!"For array textures: usage_flags must not contain DEPTH_STENCIL_TARGET");
+                if (createinfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET) {
+                    SDL_assert_release(!"For array textures: usage must not contain DEPTH_STENCIL_TARGET");
                     failed = true;
                 }
                 if (createinfo->sample_count > SDL_GPU_SAMPLECOUNT_1) {
@@ -797,8 +797,8 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
                     failed = true;
                 }
             }
-            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_2D, createinfo->usage_flags)) {
-                SDL_assert_release(!"For 2D textures: the format is unsupported for the given usage_flags");
+            if (!SDL_GPUTextureSupportsFormat(device, createinfo->format, SDL_GPU_TEXTURETYPE_2D, createinfo->usage)) {
+                SDL_assert_release(!"For 2D textures: the format is unsupported for the given usage");
                 failed = true;
             }
         }
@@ -825,7 +825,7 @@ SDL_GPUBuffer *SDL_CreateGPUBuffer(
 
     return device->CreateBuffer(
         device->driverData,
-        createinfo->usage_flags,
+        createinfo->usage,
         createinfo->size);
 }
 
@@ -1340,15 +1340,15 @@ void SDL_BindGPUVertexBuffers(
 
 void SDL_BindGPUIndexBuffer(
     SDL_GPURenderPass *render_pass,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize index_element_size)
 {
     if (render_pass == NULL) {
         SDL_InvalidParamError("render_pass");
         return;
     }
-    if (pBinding == NULL) {
-        SDL_InvalidParamError("pBinding");
+    if (binding == NULL) {
+        SDL_InvalidParamError("binding");
         return;
     }
 
@@ -1358,7 +1358,7 @@ void SDL_BindGPUIndexBuffer(
 
     RENDERPASS_DEVICE->BindIndexBuffer(
         RENDERPASS_COMMAND_BUFFER,
-        pBinding,
+        binding,
         index_element_size);
 }
 
@@ -2107,7 +2107,7 @@ void SDL_GenerateMipmapsForGPUTexture(
             return;
         }
 
-        if (!(header->info.usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER) || !(header->info.usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
+        if (!(header->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) || !(header->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
             SDL_assert_release(!"GenerateMipmaps texture must be created with SAMPLER and COLOR_TARGET usage flags!");
             return;
         }
@@ -2152,11 +2152,11 @@ void SDL_BlitGPUTexture(
             SDL_assert_release(!"Blit source and destination textures must be non-NULL");
             return; // attempting to proceed will crash
         }
-        if ((srcHeader->info.usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER) == 0) {
+        if ((srcHeader->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) == 0) {
             SDL_assert_release(!"Blit source texture must be created with the SAMPLER usage flag");
             failed = true;
         }
-        if ((dstHeader->info.usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) == 0) {
+        if ((dstHeader->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) == 0) {
             SDL_assert_release(!"Blit destination texture must be created with the COLOR_TARGET usage flag");
             failed = true;
         }

@@ -1338,7 +1338,7 @@ static ID3D11RasterizerState *D3D11_INTERNAL_FetchRasterizerState(
     rasterizerDesc.DepthBiasClamp = rasterizerState.depth_bias_clamp;
     rasterizerDesc.DepthClipEnable = TRUE;
     rasterizerDesc.FillMode = (rasterizerState.fill_mode == SDL_GPU_FILLMODE_FILL) ? D3D11_FILL_SOLID : D3D11_FILL_WIREFRAME;
-    rasterizerDesc.FrontCounterClockwise = (rasterizerState.frontFace == SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE);
+    rasterizerDesc.FrontCounterClockwise = (rasterizerState.front_face == SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE);
     rasterizerDesc.MultisampleEnable = TRUE; // only applies to MSAA render targets
     rasterizerDesc.ScissorEnable = TRUE;
     rasterizerDesc.SlopeScaledDepthBias = rasterizerState.depth_bias_slope_factor;
@@ -1500,7 +1500,7 @@ static SDL_GPUComputePipeline *D3D11_CreateComputePipeline(
         SDL_GPU_SHADERSTAGE_COMPUTE,
         createinfo->code,
         createinfo->code_size,
-        createinfo->entrypoint_name,
+        createinfo->entrypoint,
         NULL,
         NULL);
     if (shader == NULL) {
@@ -1826,7 +1826,7 @@ SDL_GPUShader *D3D11_CreateShader(
         createinfo->stage,
         createinfo->code,
         createinfo->code_size,
-        createinfo->entrypoint_name,
+        createinfo->entrypoint,
         createinfo->stage == SDL_GPU_SHADERSTAGE_VERTEX ? &bytecode : NULL,
         createinfo->stage == SDL_GPU_SHADERSTAGE_VERTEX ? &bytecodeSize : NULL);
     if (!handle) {
@@ -1860,20 +1860,20 @@ static D3D11Texture *D3D11_INTERNAL_CreateTexture(
     D3D11Texture *d3d11Texture;
     HRESULT res;
 
-    isColorTarget = createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
-    isDepthStencil = createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
+    isColorTarget = createInfo->usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    isDepthStencil = createInfo->usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
     needsSRV =
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER) ||
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) ||
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ);
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) ||
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_GRAPHICS_STORAGE_READ) ||
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_READ);
     needSubresourceUAV =
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE);
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE);
     isMultisample = createInfo->sample_count > SDL_GPU_SAMPLECOUNT_1;
-    isStaging = createInfo->usage_flags == 0;
+    isStaging = createInfo->usage == 0;
     isMippable =
         createInfo->num_levels > 1 &&
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_SAMPLER) &&
-        (createInfo->usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) &&
+        (createInfo->usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET);
     format = SDLToD3D11_TextureFormat[createInfo->format];
     if (isDepthStencil) {
         format = D3D11_INTERNAL_GetTypelessFormat(format);
@@ -2687,7 +2687,7 @@ static void D3D11_UploadToTexture(
     stagingTextureCreateInfo.layer_count_or_depth = 1;
     stagingTextureCreateInfo.num_levels = 1;
     stagingTextureCreateInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    stagingTextureCreateInfo.usage_flags = 0;
+    stagingTextureCreateInfo.usage = 0;
     stagingTextureCreateInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
     stagingTextureCreateInfo.format = dstFormat;
 
@@ -3390,8 +3390,8 @@ static void D3D11_SetViewport(
         viewport->y,
         viewport->w,
         viewport->h,
-        viewport->minDepth,
-        viewport->maxDepth
+        viewport->min_depth,
+        viewport->max_depth
     };
 
     ID3D11DeviceContext_RSSetViewports(
@@ -3597,8 +3597,8 @@ static void D3D11_BeginRenderPass(
     viewport.y = 0;
     viewport.w = (float)vpWidth;
     viewport.h = (float)vpHeight;
-    viewport.minDepth = 0;
-    viewport.maxDepth = 1;
+    viewport.min_depth = 0;
+    viewport.max_depth = 1;
 
     D3D11_SetViewport(
         commandBuffer,
@@ -3715,11 +3715,11 @@ static void D3D11_BindVertexBuffers(
 
 static void D3D11_BindIndexBuffer(
     SDL_GPUCommandBuffer *commandBuffer,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize indexElementSize)
 {
     D3D11CommandBuffer *d3d11CommandBuffer = (D3D11CommandBuffer *)commandBuffer;
-    D3D11Buffer *d3d11Buffer = ((D3D11BufferContainer *)pBinding->buffer)->activeBuffer;
+    D3D11Buffer *d3d11Buffer = ((D3D11BufferContainer *)binding->buffer)->activeBuffer;
 
     D3D11_INTERNAL_TrackBuffer(d3d11CommandBuffer, d3d11Buffer);
 
@@ -3727,7 +3727,7 @@ static void D3D11_BindIndexBuffer(
         d3d11CommandBuffer->context,
         d3d11Buffer->handle,
         SDLToD3D11_IndexType[indexElementSize],
-        (UINT)pBinding->offset);
+        (UINT)binding->offset);
 }
 
 static void D3D11_BindVertexSamplers(
@@ -4211,7 +4211,7 @@ static void D3D11_BeginComputePass(
 
     for (i = 0; i < numStorageTextureBindings; i += 1) {
         textureContainer = (D3D11TextureContainer *)storageTextureBindings[i].texture;
-        if (!(textureContainer->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE)) {
+        if (!(textureContainer->header.info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE)) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "Attempted to bind read-only texture as compute write texture");
         }
 
@@ -5037,7 +5037,7 @@ static bool D3D11_INTERNAL_CreateSwapchain(
     windowData->textureContainer.header.info.type = SDL_GPU_TEXTURETYPE_2D;
     windowData->textureContainer.header.info.num_levels = 1;
     windowData->textureContainer.header.info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-    windowData->textureContainer.header.info.usage_flags = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    windowData->textureContainer.header.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
     windowData->texture.container = &windowData->textureContainer;
     windowData->texture.containerIndex = 0;
@@ -5748,7 +5748,7 @@ static void D3D11_INTERNAL_InitBlitPipelines(
     shaderCreateInfo.code_size = sizeof(D3D11_FullscreenVert);
     shaderCreateInfo.stage = SDL_GPU_SHADERSTAGE_VERTEX;
     shaderCreateInfo.format = SDL_GPU_SHADERFORMAT_DXBC;
-    shaderCreateInfo.entrypoint_name = "main";
+    shaderCreateInfo.entrypoint = "main";
 
     fullscreenVertexShader = D3D11_CreateShader(
         (SDL_GPURenderer *)renderer,

@@ -958,8 +958,8 @@ typedef struct SDL_GPUViewport
     float y;
     float w;
     float h;
-    float minDepth;
-    float maxDepth;
+    float min_depth;
+    float max_depth;
 } SDL_GPUViewport;
 
 typedef struct SDL_GPUTextureTransferInfo
@@ -1126,7 +1126,7 @@ typedef struct SDL_GPUShaderCreateInfo
 {
     size_t code_size;
     const Uint8 *code;
-    const char *entrypoint_name;
+    const char *entrypoint;
     SDL_GPUShaderFormat format;
     SDL_GPUShaderStage stage;
     Uint32 num_samplers;
@@ -1141,7 +1141,7 @@ typedef struct SDL_GPUTextureCreateInfo
 {
     SDL_GPUTextureType type;
     SDL_GPUTextureFormat format;
-    SDL_GPUTextureUsageFlags usage_flags;
+    SDL_GPUTextureUsageFlags usage;
     Uint32 width;
     Uint32 height;
     Uint32 layer_count_or_depth;
@@ -1160,7 +1160,7 @@ typedef struct SDL_GPUTextureCreateInfo
 
 typedef struct SDL_GPUBufferCreateInfo
 {
-    SDL_GPUBufferUsageFlags usage_flags;
+    SDL_GPUBufferUsageFlags usage;
     Uint32 size;
 
     SDL_PropertiesID props;
@@ -1180,7 +1180,7 @@ typedef struct SDL_GPURasterizerState
 {
     SDL_GPUFillMode fill_mode;
     SDL_GPUCullMode cull_mode;
-    SDL_GPUFrontFace frontFace;
+    SDL_GPUFrontFace front_face;
     SDL_bool enable_depth_bias;
     Uint8 padding1;
     Uint8 padding2;
@@ -1246,7 +1246,7 @@ typedef struct SDL_GPUComputePipelineCreateInfo
 {
     size_t code_size;
     const Uint8 *code;
-    const char *entrypoint_name;
+    const char *entrypoint;
     SDL_GPUShaderFormat format;
     Uint32 num_readonly_storage_textures;
     Uint32 num_readonly_storage_buffers;
@@ -2182,7 +2182,7 @@ extern SDL_DECLSPEC void SDLCALL SDL_BindGPUVertexBuffers(
  * calls.
  *
  * \param render_pass a render pass handle.
- * \param pBinding a pointer to a struct containing an index buffer and
+ * \param binding a pointer to a struct containing an index buffer and
  *                 offset.
  * \param index_element_size whether the index values in the buffer are 16- or
  *                         32-bit.
@@ -2191,7 +2191,7 @@ extern SDL_DECLSPEC void SDLCALL SDL_BindGPUVertexBuffers(
  */
 extern SDL_DECLSPEC void SDLCALL SDL_BindGPUIndexBuffer(
     SDL_GPURenderPass *render_pass,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize index_element_size);
 
 /**

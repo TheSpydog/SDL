@@ -4719,7 +4719,7 @@ static bool VULKAN_INTERNAL_CreateSwapchain(
         swapchainData->textureContainers[i].header.info.type = SDL_GPU_TEXTURETYPE_2D;
         swapchainData->textureContainers[i].header.info.num_levels = 1;
         swapchainData->textureContainers[i].header.info.sample_count = SDL_GPU_SAMPLECOUNT_1;
-        swapchainData->textureContainers[i].header.info.usage_flags = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+        swapchainData->textureContainers[i].header.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
         swapchainData->textureContainers[i].activeTextureHandle = SDL_malloc(sizeof(VulkanTextureHandle));
 
@@ -6560,7 +6560,7 @@ static SDL_GPUGraphicsPipeline *VULKAN_CreateGraphicsPipeline(
         renderer,
         createinfo->rasterizer_state.fill_mode);
     rasterizationStateCreateInfo.cullMode = SDLToVK_CullMode[createinfo->rasterizer_state.cull_mode];
-    rasterizationStateCreateInfo.frontFace = SDLToVK_FrontFace[createinfo->rasterizer_state.frontFace];
+    rasterizationStateCreateInfo.frontFace = SDLToVK_FrontFace[createinfo->rasterizer_state.front_face];
     rasterizationStateCreateInfo.depthBiasEnable =
         createinfo->rasterizer_state.enable_depth_bias;
     rasterizationStateCreateInfo.depthBiasConstantFactor =
@@ -6766,7 +6766,7 @@ static SDL_GPUComputePipeline *VULKAN_CreateComputePipeline(
     pipelineShaderStageCreateInfo.flags = 0;
     pipelineShaderStageCreateInfo.stage = VK_SHADER_STAGE_COMPUTE_BIT;
     pipelineShaderStageCreateInfo.module = vulkanComputePipeline->shaderModule;
-    pipelineShaderStageCreateInfo.pName = createinfo->entrypoint_name;
+    pipelineShaderStageCreateInfo.pName = createinfo->entrypoint;
     pipelineShaderStageCreateInfo.pSpecializationInfo = NULL;
 
     if (!VULKAN_INTERNAL_InitializeComputePipelineResourceLayout(
@@ -6900,9 +6900,9 @@ static SDL_GPUShader *VULKAN_CreateShader(
         return NULL;
     }
 
-    entryPointNameLength = SDL_strlen(createinfo->entrypoint_name) + 1;
+    entryPointNameLength = SDL_strlen(createinfo->entrypoint) + 1;
     vulkanShader->entrypointName = SDL_malloc(entryPointNameLength);
-    SDL_utf8strlcpy((char *)vulkanShader->entrypointName, createinfo->entrypoint_name, entryPointNameLength);
+    SDL_utf8strlcpy((char *)vulkanShader->entrypointName, createinfo->entrypoint, entryPointNameLength);
 
     vulkanShader->numSamplers = createinfo->num_samplers;
     vulkanShader->numStorageTextures = createinfo->num_storage_textures;
@@ -6962,7 +6962,7 @@ static SDL_GPUTexture *VULKAN_CreateTexture(
         format,
         swizzle,
         imageAspectFlags,
-        createinfo->usage_flags,
+        createinfo->usage,
         false);
 
     if (textureHandle == NULL) {
@@ -7473,8 +7473,8 @@ static void VULKAN_INTERNAL_SetCurrentViewport(
 
     vulkanCommandBuffer->currentViewport.x = viewport->x;
     vulkanCommandBuffer->currentViewport.width = viewport->w;
-    vulkanCommandBuffer->currentViewport.minDepth = viewport->minDepth;
-    vulkanCommandBuffer->currentViewport.maxDepth = viewport->maxDepth;
+    vulkanCommandBuffer->currentViewport.minDepth = viewport->min_depth;
+    vulkanCommandBuffer->currentViewport.maxDepth = viewport->max_depth;
 
     // Viewport flip for consistency with other backends
     // FIXME: need moltenVK hack
@@ -7883,7 +7883,7 @@ static void VULKAN_BeginRenderPass(
         }
 
         // FIXME: validate this in gpu.c
-        if (!(textureContainer->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
+        if (!(textureContainer->header.info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "Color attachment texture was not designated as a target!");
             return;
         }
@@ -7906,7 +7906,7 @@ static void VULKAN_BeginRenderPass(
         }
 
         // FIXME: validate this in gpu.c
-        if (!(textureContainer->header.info.usage_flags & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+        if (!(textureContainer->header.info.usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
             SDL_LogError(SDL_LOG_CATEGORY_GPU, "Depth stencil attachment texture was not designated as a target!");
             return;
         }
@@ -8040,8 +8040,8 @@ static void VULKAN_BeginRenderPass(
     defaultViewport.y = 0;
     defaultViewport.w = (float)framebufferWidth;
     defaultViewport.h = (float)framebufferHeight;
-    defaultViewport.minDepth = 0;
-    defaultViewport.maxDepth = 1;
+    defaultViewport.min_depth = 0;
+    defaultViewport.max_depth = 1;
 
     VULKAN_INTERNAL_SetCurrentViewport(
         vulkanCommandBuffer,
@@ -8160,19 +8160,19 @@ static void VULKAN_BindVertexBuffers(
 
 static void VULKAN_BindIndexBuffer(
     SDL_GPUCommandBuffer *commandBuffer,
-    const SDL_GPUBufferBinding *pBinding,
+    const SDL_GPUBufferBinding *binding,
     SDL_GPUIndexElementSize indexElementSize)
 {
     VulkanCommandBuffer *vulkanCommandBuffer = (VulkanCommandBuffer *)commandBuffer;
     VulkanRenderer *renderer = (VulkanRenderer *)vulkanCommandBuffer->renderer;
-    VulkanBuffer *vulkanBuffer = ((VulkanBufferContainer *)pBinding->buffer)->activeBufferHandle->vulkanBuffer;
+    VulkanBuffer *vulkanBuffer = ((VulkanBufferContainer *)binding->buffer)->activeBufferHandle->vulkanBuffer;
 
     VULKAN_INTERNAL_TrackBuffer(vulkanCommandBuffer, vulkanBuffer);
 
     renderer->vkCmdBindIndexBuffer(
         vulkanCommandBuffer->commandBuffer,
         vulkanBuffer->buffer,
-        (VkDeviceSize)pBinding->offset,
+        (VkDeviceSize)binding->offset,
         SDLToVK_IndexType[indexElementSize]);
 }
 
