@@ -1,0 +1,7 @@
+Checks: "-*,readability-identifier-naming"
+CheckOptions:
+  readability-identifier-naming.ParameterCase: camelBack
+  readability-identifier-naming.LocalVariableCase: camelBack
+  readability-identifier-naming.LocalVariableIgnoredRegexp: "[A-Z]+.*"
+  readability-identifier-naming.MemberCase: camelBack
+  readability-identifier-naming.MemberIgnoredRegexp: "[A-Z]+.*|.*[dll].*"
