@@ -5633,9 +5633,9 @@ static bool D3D11_SupportsTextureFormat(
 static bool D3D11_PrepareDriver(SDL_VideoDevice *this)
 {
     void *d3d11_dll, *dxgi_dll;
-    PFN_D3D11_CREATE_DEVICE d3D11CreateDeviceFunc;
+    PFN_D3D11_CREATE_DEVICE D3D11CreateDeviceFunc;
     D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1 };
-    PFN_CREATE_DXGI_FACTORY1 createDxgiFactoryFunc;
+    PFN_CREATE_DXGI_FACTORY1 CreateDxgiFactoryFunc;
     HRESULT res;
 
     // Can we load D3D11?
@@ -5646,10 +5646,10 @@ static bool D3D11_PrepareDriver(SDL_VideoDevice *this)
         return false;
     }
 
-    d3D11CreateDeviceFunc = (PFN_D3D11_CREATE_DEVICE)SDL_LoadFunction(
+    D3D11CreateDeviceFunc = (PFN_D3D11_CREATE_DEVICE)SDL_LoadFunction(
         d3d11_dll,
         D3D11_CREATE_DEVICE_FUNC);
-    if (d3D11CreateDeviceFunc == NULL) {
+    if (D3D11CreateDeviceFunc == NULL) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "D3D11: Could not find function " D3D11_CREATE_DEVICE_FUNC " in " D3D11_DLL);
         SDL_UnloadObject(d3d11_dll);
         return false;
@@ -5657,7 +5657,7 @@ static bool D3D11_PrepareDriver(SDL_VideoDevice *this)
 
     // Can we create a device?
 
-    res = d3D11CreateDeviceFunc(
+    res = D3D11CreateDeviceFunc(
         NULL,
         D3D_DRIVER_TYPE_HARDWARE,
         NULL,
@@ -5684,11 +5684,11 @@ static bool D3D11_PrepareDriver(SDL_VideoDevice *this)
         return false;
     }
 
-    createDxgiFactoryFunc = (PFN_CREATE_DXGI_FACTORY1)SDL_LoadFunction(
+    CreateDxgiFactoryFunc = (PFN_CREATE_DXGI_FACTORY1)SDL_LoadFunction(
         dxgi_dll,
         CREATE_DXGI_FACTORY1_FUNC);
     SDL_UnloadObject(dxgi_dll); // We're not going to call this function, so we can just unload now.
-    if (createDxgiFactoryFunc == NULL) {
+    if (CreateDxgiFactoryFunc == NULL) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "D3D11: Could not find function " CREATE_DXGI_FACTORY1_FUNC " in " DXGI_DLL);
         return false;
     }
@@ -5698,7 +5698,7 @@ static bool D3D11_PrepareDriver(SDL_VideoDevice *this)
 
 static void D3D11_INTERNAL_TryInitializeDXGIDebug(D3D11Renderer *renderer)
 {
-    PFN_DXGI_GET_DEBUG_INTERFACE dxgiGetDebugInterfaceFunc;
+    PFN_DXGI_GET_DEBUG_INTERFACE DXGIGetDebugInterfaceFunc;
     HRESULT res;
 
     renderer->dxgidebug_dll = SDL_LoadObject(DXGIDEBUG_DLL);
@@ -5707,21 +5707,21 @@ static void D3D11_INTERNAL_TryInitializeDXGIDebug(D3D11Renderer *renderer)
         return;
     }
 
-    dxgiGetDebugInterfaceFunc = (PFN_DXGI_GET_DEBUG_INTERFACE)SDL_LoadFunction(
+    DXGIGetDebugInterfaceFunc = (PFN_DXGI_GET_DEBUG_INTERFACE)SDL_LoadFunction(
         renderer->dxgidebug_dll,
         DXGI_GET_DEBUG_INTERFACE_FUNC);
-    if (dxgiGetDebugInterfaceFunc == NULL) {
+    if (DXGIGetDebugInterfaceFunc == NULL) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Could not load function: " DXGI_GET_DEBUG_INTERFACE_FUNC);
         return;
     }
 
-    res = dxgiGetDebugInterfaceFunc(&D3D_IID_IDXGIDebug, (void **)&renderer->dxgiDebug);
+    res = DXGIGetDebugInterfaceFunc(&D3D_IID_IDXGIDebug, (void **)&renderer->dxgiDebug);
     if (FAILED(res)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Could not get IDXGIDebug interface");
     }
 
 #ifdef HAVE_IDXGIINFOQUEUE
-    res = dxgiGetDebugInterfaceFunc(&D3D_IID_IDXGIInfoQueue, (void **)&renderer->dxgiInfoQueue);
+    res = DXGIGetDebugInterfaceFunc(&D3D_IID_IDXGIInfoQueue, (void **)&renderer->dxgiInfoQueue);
     if (FAILED(res)) {
         SDL_LogWarn(SDL_LOG_CATEGORY_GPU, "Could not get IDXGIInfoQueue interface");
     }
@@ -5938,8 +5938,8 @@ static void D3D11_INTERNAL_DestroyBlitPipelines(
 static SDL_GPUDevice *D3D11_CreateDevice(bool debugMode, bool preferLowPower, SDL_PropertiesID props)
 {
     D3D11Renderer *renderer;
-    PFN_CREATE_DXGI_FACTORY1 createDxgiFactoryFunc;
-    PFN_D3D11_CREATE_DEVICE d3D11CreateDeviceFunc;
+    PFN_CREATE_DXGI_FACTORY1 CreateDxgiFactoryFunc;
+    PFN_D3D11_CREATE_DEVICE D3D11CreateDeviceFunc;
     D3D_FEATURE_LEVEL levels[] = { D3D_FEATURE_LEVEL_11_1 };
     IDXGIFactory4 *factory4;
     IDXGIFactory5 *factory5;
@@ -5960,16 +5960,16 @@ static SDL_GPUDevice *D3D11_CreateDevice(bool debugMode, bool preferLowPower, SD
     }
 
     // Load the CreateDXGIFactory1 function
-    createDxgiFactoryFunc = (PFN_CREATE_DXGI_FACTORY1)SDL_LoadFunction(
+    CreateDxgiFactoryFunc = (PFN_CREATE_DXGI_FACTORY1)SDL_LoadFunction(
         renderer->dxgi_dll,
         CREATE_DXGI_FACTORY1_FUNC);
-    if (createDxgiFactoryFunc == NULL) {
+    if (CreateDxgiFactoryFunc == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_GPU, "Could not load function: " CREATE_DXGI_FACTORY1_FUNC);
         return NULL;
     }
 
     // Create the DXGI factory
-    res = createDxgiFactoryFunc(
+    res = CreateDxgiFactoryFunc(
         &D3D_IID_IDXGIFactory1,
         (void **)&renderer->factory);
     ERROR_CHECK_RETURN("Could not create DXGIFactory", NULL);
@@ -6037,10 +6037,10 @@ static SDL_GPUDevice *D3D11_CreateDevice(bool debugMode, bool preferLowPower, SD
     }
 
     // Load the CreateDevice function
-    d3D11CreateDeviceFunc = (PFN_D3D11_CREATE_DEVICE)SDL_LoadFunction(
+    D3D11CreateDeviceFunc = (PFN_D3D11_CREATE_DEVICE)SDL_LoadFunction(
         renderer->d3d11_dll,
         D3D11_CREATE_DEVICE_FUNC);
-    if (d3D11CreateDeviceFunc == NULL) {
+    if (D3D11CreateDeviceFunc == NULL) {
         SDL_LogError(SDL_LOG_CATEGORY_GPU, "Could not load function: " D3D11_CREATE_DEVICE_FUNC);
         return NULL;
     }
@@ -6054,7 +6054,7 @@ static SDL_GPUDevice *D3D11_CreateDevice(bool debugMode, bool preferLowPower, SD
     // Create the device
     ID3D11Device *d3d11Device;
 tryCreateDevice:
-    res = d3D11CreateDeviceFunc(
+    res = D3D11CreateDeviceFunc(
         (IDXGIAdapter *)renderer->adapter,
         D3D_DRIVER_TYPE_UNKNOWN, // Must be UNKNOWN if adapter is non-null according to spec
         NULL,
