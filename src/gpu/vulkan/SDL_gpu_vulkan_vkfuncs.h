@@ -82,7 +82,6 @@ VULKAN_DEVICE_FUNCTION(vkAllocateMemory)
 VULKAN_DEVICE_FUNCTION(vkBeginCommandBuffer)
 VULKAN_DEVICE_FUNCTION(vkBindBufferMemory)
 VULKAN_DEVICE_FUNCTION(vkBindImageMemory)
-VULKAN_DEVICE_FUNCTION(vkCmdBeginRenderPass)
 VULKAN_DEVICE_FUNCTION(vkCmdBindDescriptorSets)
 VULKAN_DEVICE_FUNCTION(vkCmdBindIndexBuffer)
 VULKAN_DEVICE_FUNCTION(vkCmdBindPipeline)
@@ -101,7 +100,6 @@ VULKAN_DEVICE_FUNCTION(vkCmdDraw)
 VULKAN_DEVICE_FUNCTION(vkCmdDrawIndexed)
 VULKAN_DEVICE_FUNCTION(vkCmdDrawIndexedIndirect)
 VULKAN_DEVICE_FUNCTION(vkCmdDrawIndirect)
-VULKAN_DEVICE_FUNCTION(vkCmdEndRenderPass)
 VULKAN_DEVICE_FUNCTION(vkCmdPipelineBarrier)
 VULKAN_DEVICE_FUNCTION(vkCmdResolveImage)
 VULKAN_DEVICE_FUNCTION(vkCmdSetBlendConstants)
@@ -167,6 +165,10 @@ VULKAN_DEVICE_FUNCTION(vkCreateSwapchainKHR)
 VULKAN_DEVICE_FUNCTION(vkDestroySwapchainKHR)
 VULKAN_DEVICE_FUNCTION(vkQueuePresentKHR)
 VULKAN_DEVICE_FUNCTION(vkGetSwapchainImagesKHR)
+
+// VK_KHR_dynamic_rendering
+VULKAN_DEVICE_FUNCTION(vkCmdBeginRenderingKHR)
+VULKAN_DEVICE_FUNCTION(vkCmdEndRenderingKHR)
 
 /*
  * Redefine these every time you include this header!
