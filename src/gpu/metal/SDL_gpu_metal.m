@@ -429,20 +429,6 @@ typedef struct MetalTexture
     SDL_AtomicInt referenceCount;
 } MetalTexture;
 
-typedef struct MetalTextureContainer
-{
-    TextureCommonHeader header;
-
-    MetalTexture *activeTexture;
-    Uint8 canBeCycled;
-
-    Uint32 textureCapacity;
-    Uint32 textureCount;
-    MetalTexture **textures;
-
-    char *debugName;
-} MetalTextureContainer;
-
 typedef struct MetalFence
 {
     SDL_AtomicInt complete;
@@ -457,7 +443,7 @@ typedef struct MetalWindowData
     SDL_GPUPresentMode presentMode;
     id<CAMetalDrawable> drawable;
     MetalTexture texture;
-    MetalTextureContainer textureContainer;
+    TextureContainer textureContainer;
     SDL_GPUFence *inFlightFences[MAX_FRAMES_IN_FLIGHT];
     Uint32 frameCounter;
 } MetalWindowData;
@@ -658,7 +644,7 @@ struct MetalRenderer
     Uint32 bufferContainersToDestroyCount;
     Uint32 bufferContainersToDestroyCapacity;
 
-    MetalTextureContainer **textureContainersToDestroy;
+    TextureContainer **textureContainersToDestroy;
     Uint32 textureContainersToDestroyCount;
     Uint32 textureContainersToDestroyCapacity;
 
@@ -908,15 +894,16 @@ static MetalLibraryFunction METAL_INTERNAL_CompileShader(
 // Disposal
 
 static void METAL_INTERNAL_DestroyTextureContainer(
-    MetalTextureContainer *container)
+    TextureContainer *container)
 {
-    for (Uint32 i = 0; i < container->textureCount; i += 1) {
-        container->textures[i]->handle = nil;
-        SDL_free(container->textures[i]);
+    for (Uint32 i = 0; i < container->texture_count; i += 1) {
+        MetalTexture *texture = (MetalTexture *)container->textures[i];
+        texture->handle = nil;
+        SDL_free(texture);
     }
-    SDL_DestroyProperties(container->header.info.props);
-    if (container->debugName != NULL) {
-        SDL_free(container->debugName);
+    SDL_DestroyProperties(container->info.props);
+    if (container->debug_name != NULL) {
+        SDL_free(container->debug_name);
     }
     SDL_free(container->textures);
     SDL_free(container);
@@ -927,13 +914,13 @@ static void METAL_ReleaseTexture(
     SDL_GPUTexture *texture)
 {
     MetalRenderer *renderer = (MetalRenderer *)driverData;
-    MetalTextureContainer *container = (MetalTextureContainer *)texture;
+    TextureContainer *container = (TextureContainer *)texture;
 
     SDL_LockMutex(renderer->disposeLock);
 
     EXPAND_ARRAY_IF_NEEDED(
         renderer->textureContainersToDestroy,
-        MetalTextureContainer *,
+        TextureContainer *,
         renderer->textureContainersToDestroyCount + 1,
         renderer->textureContainersToDestroyCapacity,
         renderer->textureContainersToDestroyCapacity + 1);
@@ -1274,17 +1261,17 @@ static void METAL_SetTextureName(
 {
     @autoreleasepool {
         MetalRenderer *renderer = (MetalRenderer *)driverData;
-        MetalTextureContainer *container = (MetalTextureContainer *)texture;
+        TextureContainer *container = (TextureContainer *)texture;
 
         if (renderer->debugMode && text != NULL) {
-            if (container->debugName != NULL) {
-                SDL_free(container->debugName);
+            if (container->debug_name != NULL) {
+                SDL_free(container->debug_name);
             }
 
-            container->debugName = SDL_strdup(text);
+            container->debug_name = SDL_strdup(text);
 
-            for (Uint32 i = 0; i < container->textureCount; i += 1) {
-                container->textures[i]->handle.label = @(text);
+            for (Uint32 i = 0; i < container->texture_count; i += 1) {
+                ((MetalTexture *)container->textures[i])->handle.label = @(text);
             }
         }
     }
@@ -1504,7 +1491,7 @@ static SDL_GPUTexture *METAL_CreateTexture(
 {
     @autoreleasepool {
         MetalRenderer *renderer = (MetalRenderer *)driverData;
-        MetalTextureContainer *container;
+        TextureContainer *container;
         MetalTexture *texture;
 
         texture = METAL_INTERNAL_CreateTexture(
@@ -1515,26 +1502,26 @@ static SDL_GPUTexture *METAL_CreateTexture(
             SET_STRING_ERROR_AND_RETURN("Failed to create texture", NULL);
         }
 
-        container = SDL_calloc(1, sizeof(MetalTextureContainer));
-        container->canBeCycled = 1;
+        container = SDL_calloc(1, sizeof(TextureContainer));
+        container->cycleable = true;
 
         // Copy properties so we don't lose information when the client destroys them
-        container->header.info = *createinfo;
-        container->header.info.props = SDL_CreateProperties();
+        container->info = *createinfo;
+        container->info.props = SDL_CreateProperties();
         if (createinfo->props) {
-            SDL_CopyProperties(createinfo->props, container->header.info.props);
+            SDL_CopyProperties(createinfo->props, container->info.props);
         }
 
-        container->activeTexture = texture;
-        container->textureCapacity = 1;
-        container->textureCount = 1;
+        container->active_texture = (DriverTexture *)texture;
+        container->texture_capacity = 1;
+        container->texture_count = 1;
         container->textures = SDL_calloc(
-            container->textureCapacity, sizeof(MetalTexture *));
-        container->textures[0] = texture;
-        container->debugName = NULL;
+            container->texture_capacity, sizeof(MetalTexture *));
+        container->textures[0] = container->active_texture;
+        container->debug_name = NULL;
 
         if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
-            container->debugName = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
+            container->debug_name = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
         }
 
         return (SDL_GPUTexture *)container;
@@ -1544,36 +1531,37 @@ static SDL_GPUTexture *METAL_CreateTexture(
 // This function assumes that it's called from within an autorelease pool
 static MetalTexture *METAL_INTERNAL_PrepareTextureForWrite(
     MetalRenderer *renderer,
-    MetalTextureContainer *container,
+    TextureContainer *container,
     bool cycle)
 {
     Uint32 i;
 
     // Cycle the active texture handle if needed
-    if (cycle && container->canBeCycled) {
-        for (i = 0; i < container->textureCount; i += 1) {
-            if (SDL_GetAtomicInt(&container->textures[i]->referenceCount) == 0) {
-                container->activeTexture = container->textures[i];
-                return container->activeTexture;
+    if (cycle && container->cycleable) {
+        for (i = 0; i < container->texture_count; i += 1) {
+            MetalTexture *texture = (MetalTexture *)container->textures[i];
+            if (SDL_GetAtomicInt(&texture->referenceCount) == 0) {
+                container->active_texture = container->textures[i];
+                return (MetalTexture *)container->active_texture;
             }
         }
 
         EXPAND_ARRAY_IF_NEEDED(
             container->textures,
-            MetalTexture *,
-            container->textureCount + 1,
-            container->textureCapacity,
-            container->textureCapacity + 1);
+            DriverTexture *,
+            container->texture_count + 1,
+            container->texture_capacity,
+            container->texture_capacity + 1);
 
-        container->textures[container->textureCount] = METAL_INTERNAL_CreateTexture(
+        container->textures[container->texture_count] = (DriverTexture *)METAL_INTERNAL_CreateTexture(
             renderer,
-            &container->header.info);
-        container->textureCount += 1;
+            &container->info);
+        container->texture_count += 1;
 
-        container->activeTexture = container->textures[container->textureCount - 1];
+        container->active_texture = container->textures[container->texture_count - 1];
     }
 
-    return container->activeTexture;
+    return (MetalTexture *)container->active_texture;
 }
 
 // This function assumes that it's called from within an autorelease pool
@@ -1804,16 +1792,16 @@ static void METAL_UploadToTexture(
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
         MetalRenderer *renderer = metalCommandBuffer->renderer;
         MetalBufferContainer *bufferContainer = (MetalBufferContainer *)source->transfer_buffer;
-        MetalTextureContainer *textureContainer = (MetalTextureContainer *)destination->texture;
+        TextureContainer *textureContainer = (TextureContainer *)destination->texture;
 
         MetalTexture *metalTexture = METAL_INTERNAL_PrepareTextureForWrite(renderer, textureContainer, cycle);
 
         [metalCommandBuffer->blitEncoder
                  copyFromBuffer:bufferContainer->activeBuffer->handle
                    sourceOffset:source->offset
-              sourceBytesPerRow:BytesPerRow(destination->w, textureContainer->header.info.format)
+              sourceBytesPerRow:BytesPerRow(destination->w, textureContainer->info.format)
             // sourceBytesPerImage expects the stride between 2D images (slices) of a 3D texture, not the size of the entire region
-            sourceBytesPerImage:SDL_CalculateGPUTextureFormatSize(textureContainer->header.info.format, destination->w, destination->h, 1)
+            sourceBytesPerImage:SDL_CalculateGPUTextureFormatSize(textureContainer->info.format, destination->w, destination->h, 1)
                      sourceSize:MTLSizeMake(destination->w, destination->h, destination->d)
                       toTexture:metalTexture->handle
                destinationSlice:destination->layer
@@ -1866,10 +1854,10 @@ static void METAL_CopyTextureToTexture(
     @autoreleasepool {
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
         MetalRenderer *renderer = metalCommandBuffer->renderer;
-        MetalTextureContainer *srcContainer = (MetalTextureContainer *)source->texture;
-        MetalTextureContainer *dstContainer = (MetalTextureContainer *)destination->texture;
+        TextureContainer *srcContainer = (TextureContainer *)source->texture;
+        TextureContainer *dstContainer = (TextureContainer *)destination->texture;
 
-        MetalTexture *srcTexture = srcContainer->activeTexture;
+        MetalTexture *srcTexture = (MetalTexture *)srcContainer->active_texture;
         MetalTexture *dstTexture = METAL_INTERNAL_PrepareTextureForWrite(
             renderer,
             dstContainer,
@@ -1930,8 +1918,8 @@ static void METAL_DownloadFromTexture(
     @autoreleasepool {
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
         MetalRenderer *renderer = metalCommandBuffer->renderer;
-        MetalTextureContainer *textureContainer = (MetalTextureContainer *)source->texture;
-        MetalTexture *metalTexture = textureContainer->activeTexture;
+        TextureContainer *textureContainer = (TextureContainer *)source->texture;
+        MetalTexture *metalTexture = (MetalTexture *)textureContainer->active_texture;
         MetalBufferContainer *bufferContainer = (MetalBufferContainer *)destination->transfer_buffer;
         Uint32 bufferStride = destination->pixels_per_row;
         Uint32 bufferImageHeight = destination->rows_per_layer;
@@ -1957,7 +1945,7 @@ static void METAL_DownloadFromTexture(
             bufferImageHeight = source->h;
         }
 
-        bytesPerRow = BytesPerRow(bufferStride, textureContainer->header.info.format);
+        bytesPerRow = BytesPerRow(bufferStride, textureContainer->info.format);
         bytesPerDepthSlice = bytesPerRow * bufferImageHeight;
 
         [metalCommandBuffer->blitEncoder
@@ -2009,8 +1997,8 @@ static void METAL_GenerateMipmaps(
 {
     @autoreleasepool {
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-        MetalTextureContainer *container = (MetalTextureContainer *)texture;
-        MetalTexture *metalTexture = container->activeTexture;
+        TextureContainer *container = (TextureContainer *)texture;
+        MetalTexture *metalTexture = (MetalTexture *)container->active_texture;
 
         METAL_BeginCopyPass(commandBuffer);
         [metalCommandBuffer->blitEncoder
@@ -2281,7 +2269,7 @@ static void METAL_BeginRenderPass(
         SDL_FColor blendConstants;
 
         for (Uint32 i = 0; i < numColorTargets; i += 1) {
-            MetalTextureContainer *container = (MetalTextureContainer *)colorTargetInfos[i].texture;
+            TextureContainer *container = (TextureContainer *)colorTargetInfos[i].texture;
             MetalTexture *texture = METAL_INTERNAL_PrepareTextureForWrite(
                 renderer,
                 container,
@@ -2289,7 +2277,7 @@ static void METAL_BeginRenderPass(
 
             passDescriptor.colorAttachments[i].texture = texture->handle;
             passDescriptor.colorAttachments[i].level = colorTargetInfos[i].mip_level;
-            if (container->header.info.type == SDL_GPU_TEXTURETYPE_3D) {
+            if (container->info.type == SDL_GPU_TEXTURETYPE_3D) {
                 passDescriptor.colorAttachments[i].depthPlane = colorTargetInfos[i].layer_or_depth_plane;
             } else {
                 passDescriptor.colorAttachments[i].slice = colorTargetInfos[i].layer_or_depth_plane;
@@ -2305,7 +2293,7 @@ static void METAL_BeginRenderPass(
             METAL_INTERNAL_TrackTexture(metalCommandBuffer, texture);
 
             if (colorTargetInfos[i].store_op == SDL_GPU_STOREOP_RESOLVE || colorTargetInfos[i].store_op == SDL_GPU_STOREOP_RESOLVE_AND_STORE) {
-                MetalTextureContainer *resolveContainer = (MetalTextureContainer *)colorTargetInfos[i].resolve_texture;
+                TextureContainer *resolveContainer = (TextureContainer *)colorTargetInfos[i].resolve_texture;
                 MetalTexture *resolveTexture = METAL_INTERNAL_PrepareTextureForWrite(
                     renderer,
                     resolveContainer,
@@ -2320,7 +2308,7 @@ static void METAL_BeginRenderPass(
         }
 
         if (depthStencilTargetInfo != NULL) {
-            MetalTextureContainer *container = (MetalTextureContainer *)depthStencilTargetInfo->texture;
+            TextureContainer *container = (TextureContainer *)depthStencilTargetInfo->texture;
             MetalTexture *texture = METAL_INTERNAL_PrepareTextureForWrite(
                 renderer,
                 container,
@@ -2333,7 +2321,7 @@ static void METAL_BeginRenderPass(
             passDescriptor.depthAttachment.storeAction = SDLToMetal_StoreOp[depthStencilTargetInfo->store_op];
             passDescriptor.depthAttachment.clearDepth = depthStencilTargetInfo->clear_depth;
 
-            if (IsStencilFormat(container->header.info.format)) {
+            if (IsStencilFormat(container->info.format)) {
                 passDescriptor.stencilAttachment.texture = texture->handle;
                 passDescriptor.stencilAttachment.loadAction = SDLToMetal_LoadOp[depthStencilTargetInfo->stencil_load_op];
                 passDescriptor.stencilAttachment.storeAction = SDLToMetal_StoreOp[depthStencilTargetInfo->stencil_store_op];
@@ -2347,9 +2335,9 @@ static void METAL_BeginRenderPass(
 
         // The viewport cannot be larger than the smallest target.
         for (Uint32 i = 0; i < numColorTargets; i += 1) {
-            MetalTextureContainer *container = (MetalTextureContainer *)colorTargetInfos[i].texture;
-            Uint32 w = container->header.info.width >> colorTargetInfos[i].mip_level;
-            Uint32 h = container->header.info.height >> colorTargetInfos[i].mip_level;
+            TextureContainer *container = (TextureContainer *)colorTargetInfos[i].texture;
+            Uint32 w = container->info.width >> colorTargetInfos[i].mip_level;
+            Uint32 h = container->info.height >> colorTargetInfos[i].mip_level;
 
             if (w < vpWidth) {
                 vpWidth = w;
@@ -2361,9 +2349,9 @@ static void METAL_BeginRenderPass(
         }
 
         if (depthStencilTargetInfo != NULL) {
-            MetalTextureContainer *container = (MetalTextureContainer *)depthStencilTargetInfo->texture;
-            Uint32 w = container->header.info.width >> depthStencilTargetInfo->mip_level;
-            Uint32 h = container->header.info.height >> depthStencilTargetInfo->mip_level;
+            TextureContainer *container = (TextureContainer *)depthStencilTargetInfo->texture;
+            Uint32 w = container->info.width >> depthStencilTargetInfo->mip_level;
+            Uint32 h = container->info.height >> depthStencilTargetInfo->mip_level;
 
             if (w < vpWidth) {
                 vpWidth = w;
@@ -2510,11 +2498,13 @@ static void METAL_BindVertexSamplers(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
     MetalSampler *sampler;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)textureSamplerBindings[i].texture;
+        textureContainer = (TextureContainer *)textureSamplerBindings[i].texture;
+        texture = (MetalTexture *)textureContainer->active_texture;
         sampler = (MetalSampler *)textureSamplerBindings[i].sampler;
 
         if (metalCommandBuffer->vertexSamplers[firstSlot + i] != sampler->handle) {
@@ -2522,13 +2512,13 @@ static void METAL_BindVertexSamplers(
             metalCommandBuffer->needVertexSamplerBind  = true;
         }
 
-        if (metalCommandBuffer->vertexTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->vertexTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->vertexTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needVertexSamplerBind  = true;
         }
@@ -2542,18 +2532,20 @@ static void METAL_BindVertexStorageTextures(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)storageTextures[i];
+        textureContainer = (TextureContainer *)storageTextures[i];
+        texture = (MetalTexture *)textureContainer->active_texture;
 
-        if (metalCommandBuffer->vertexStorageTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->vertexStorageTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->vertexStorageTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needVertexStorageTextureBind = true;
         }
@@ -2592,11 +2584,13 @@ static void METAL_BindFragmentSamplers(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
     MetalSampler *sampler;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)textureSamplerBindings[i].texture;
+        textureContainer = (TextureContainer *)textureSamplerBindings[i].texture;
+        texture = (MetalTexture *)textureContainer->active_texture;
         sampler = (MetalSampler *)textureSamplerBindings[i].sampler;
 
         if (metalCommandBuffer->fragmentSamplers[firstSlot + i] != sampler->handle) {
@@ -2604,13 +2598,13 @@ static void METAL_BindFragmentSamplers(
             metalCommandBuffer->needFragmentSamplerBind  = true;
         }
 
-        if (metalCommandBuffer->fragmentTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->fragmentTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->fragmentTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needFragmentSamplerBind  = true;
         }
@@ -2624,18 +2618,20 @@ static void METAL_BindFragmentStorageTextures(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)storageTextures[i];
+        textureContainer = (TextureContainer *)storageTextures[i];
+        texture = (MetalTexture *)textureContainer->active_texture;
 
-        if (metalCommandBuffer->fragmentStorageTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->fragmentStorageTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->fragmentStorageTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needFragmentStorageTextureBind = true;
         }
@@ -3114,7 +3110,7 @@ static void METAL_BeginComputePass(
 {
     @autoreleasepool {
         MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-        MetalTextureContainer *textureContainer;
+        TextureContainer *textureContainer;
         MetalTexture *texture;
         id<MTLTexture> textureView;
         MetalBufferContainer *bufferContainer;
@@ -3123,7 +3119,7 @@ static void METAL_BeginComputePass(
         metalCommandBuffer->computeEncoder = [metalCommandBuffer->handle computeCommandEncoder];
 
         for (Uint32 i = 0; i < numStorageTextureBindings; i += 1) {
-            textureContainer = (MetalTextureContainer *)storageTextureBindings[i].texture;
+            textureContainer = (TextureContainer *)storageTextureBindings[i].texture;
 
             texture = METAL_INTERNAL_PrepareTextureForWrite(
                 metalCommandBuffer->renderer,
@@ -3132,8 +3128,8 @@ static void METAL_BeginComputePass(
 
             METAL_INTERNAL_TrackTexture(metalCommandBuffer, texture);
 
-            textureView = [texture->handle newTextureViewWithPixelFormat:SDLToMetal_TextureFormat(textureContainer->header.info.format)
-                                                             textureType:SDLToMetal_TextureType(textureContainer->header.info.type, false)
+            textureView = [texture->handle newTextureViewWithPixelFormat:SDLToMetal_TextureFormat(textureContainer->info.format)
+                                                             textureType:SDLToMetal_TextureType(textureContainer->info.type, false)
                                                                   levels:NSMakeRange(storageTextureBindings[i].mip_level, 1)
                                                                   slices:NSMakeRange(storageTextureBindings[i].layer, 1)];
 
@@ -3208,11 +3204,13 @@ static void METAL_BindComputeSamplers(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
     MetalSampler *sampler;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)textureSamplerBindings[i].texture;
+        textureContainer = (TextureContainer *)textureSamplerBindings[i].texture;
+        texture = (MetalTexture *)textureContainer->active_texture;
         sampler = (MetalSampler *)textureSamplerBindings[i].sampler;
 
         if (metalCommandBuffer->computeSamplers[firstSlot + i] != sampler->handle) {
@@ -3220,13 +3218,13 @@ static void METAL_BindComputeSamplers(
             metalCommandBuffer->needComputeSamplerBind = true;
         }
 
-        if (metalCommandBuffer->computeSamplerTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->computeSamplerTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->computeSamplerTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needComputeSamplerBind = true;
         }
@@ -3240,18 +3238,20 @@ static void METAL_BindComputeStorageTextures(
     Uint32 numBindings)
 {
     MetalCommandBuffer *metalCommandBuffer = (MetalCommandBuffer *)commandBuffer;
-    MetalTextureContainer *textureContainer;
+    TextureContainer *textureContainer;
+    MetalTexture *texture;
 
     for (Uint32 i = 0; i < numBindings; i += 1) {
-        textureContainer = (MetalTextureContainer *)storageTextures[i];
+        textureContainer = (TextureContainer *)storageTextures[i];
+        texture = (MetalTexture *)textureContainer->active_texture;
 
-        if (metalCommandBuffer->computeReadOnlyTextures[firstSlot + i] != textureContainer->activeTexture->handle) {
+        if (metalCommandBuffer->computeReadOnlyTextures[firstSlot + i] != texture->handle) {
             METAL_INTERNAL_TrackTexture(
                 metalCommandBuffer,
-                textureContainer->activeTexture);
+                texture);
 
             metalCommandBuffer->computeReadOnlyTextures[firstSlot + i] =
-                textureContainer->activeTexture->handle;
+                texture->handle;
 
             metalCommandBuffer->needComputeReadOnlyStorageTextureBind = true;
         }
@@ -3560,8 +3560,9 @@ static void METAL_INTERNAL_PerformPendingDestroys(
 
     for (i = renderer->textureContainersToDestroyCount - 1; i >= 0; i -= 1) {
         referenceCount = 0;
-        for (j = 0; j < renderer->textureContainersToDestroy[i]->textureCount; j += 1) {
-            referenceCount += SDL_GetAtomicInt(&renderer->textureContainersToDestroy[i]->textures[j]->referenceCount);
+        for (j = 0; j < renderer->textureContainersToDestroy[i]->texture_count; j += 1) {
+            MetalTexture *texture = (MetalTexture *)renderer->textureContainersToDestroy[i]->textures[j];
+            referenceCount += SDL_GetAtomicInt(&texture->referenceCount);
         }
 
         if (referenceCount == 0) {
@@ -3703,19 +3704,19 @@ static Uint8 METAL_INTERNAL_CreateSwapchain(
 
     // Set up the texture container
     SDL_zero(windowData->textureContainer);
-    windowData->textureContainer.canBeCycled = 0;
-    windowData->textureContainer.activeTexture = &windowData->texture;
-    windowData->textureContainer.textureCapacity = 1;
-    windowData->textureContainer.textureCount = 1;
-    windowData->textureContainer.header.info.format = SwapchainCompositionToFormat[swapchainComposition];
-    windowData->textureContainer.header.info.num_levels = 1;
-    windowData->textureContainer.header.info.layer_count_or_depth = 1;
-    windowData->textureContainer.header.info.type = SDL_GPU_TEXTURETYPE_2D;
-    windowData->textureContainer.header.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
+    windowData->textureContainer.cycleable = false;
+    windowData->textureContainer.active_texture = (DriverTexture *)&windowData->texture;
+    windowData->textureContainer.texture_capacity = 1;
+    windowData->textureContainer.texture_count = 1;
+    windowData->textureContainer.info.format = SwapchainCompositionToFormat[swapchainComposition];
+    windowData->textureContainer.info.num_levels = 1;
+    windowData->textureContainer.info.layer_count_or_depth = 1;
+    windowData->textureContainer.info.type = SDL_GPU_TEXTURETYPE_2D;
+    windowData->textureContainer.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
     drawableSize = windowData->layer.drawableSize;
-    windowData->textureContainer.header.info.width = (Uint32)drawableSize.width;
-    windowData->textureContainer.header.info.height = (Uint32)drawableSize.height;
+    windowData->textureContainer.info.width = (Uint32)drawableSize.width;
+    windowData->textureContainer.info.height = (Uint32)drawableSize.height;
 
     return 1;
 }
@@ -3868,8 +3869,8 @@ static bool METAL_INTERNAL_AcquireSwapchainTexture(
 
         // Update the window size
         drawableSize = windowData->layer.drawableSize;
-        windowData->textureContainer.header.info.width = (Uint32)drawableSize.width;
-        windowData->textureContainer.header.info.height = (Uint32)drawableSize.height;
+        windowData->textureContainer.info.width = (Uint32)drawableSize.width;
+        windowData->textureContainer.info.height = (Uint32)drawableSize.height;
         if (swapchainTextureWidth) {
             *swapchainTextureWidth = (Uint32)drawableSize.width;
         }
@@ -3967,7 +3968,7 @@ static SDL_GPUTextureFormat METAL_GetSwapchainTextureFormat(
         SET_STRING_ERROR_AND_RETURN("Cannot get swapchain format, window has not been claimed", SDL_GPU_TEXTUREFORMAT_INVALID);
     }
 
-    return windowData->textureContainer.header.info.format;
+    return windowData->textureContainer.info.format;
 }
 
 static bool METAL_SetSwapchainParameters(
@@ -4014,7 +4015,7 @@ static bool METAL_SetSwapchainParameters(
         windowData->layer.colorspace = colorspace;
         CGColorSpaceRelease(colorspace);
 
-        windowData->textureContainer.header.info.format = SwapchainCompositionToFormat[swapchainComposition];
+        windowData->textureContainer.info.format = SwapchainCompositionToFormat[swapchainComposition];
 
         return true;
     }
@@ -4617,7 +4618,7 @@ static SDL_GPUDevice *METAL_CreateDevice(bool debugMode, bool preferLowPower, SD
         renderer->textureContainersToDestroyCapacity = 2;
         renderer->textureContainersToDestroyCount = 0;
         renderer->textureContainersToDestroy = SDL_calloc(
-            renderer->textureContainersToDestroyCapacity, sizeof(MetalTextureContainer *));
+            renderer->textureContainersToDestroyCapacity, sizeof(TextureContainer *));
 
         // Create claimed window list
         renderer->claimedWindowCapacity = 1;

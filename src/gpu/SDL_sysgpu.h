@@ -41,6 +41,8 @@
 
 // Common Structs
 
+typedef struct DriverTexture DriverTexture;
+
 typedef struct Pass
 {
     SDL_GPUCommandBuffer *command_buffer;
@@ -94,10 +96,18 @@ typedef struct CommandBufferCommonHeader
     bool ignore_render_pass_texture_validation;
 } CommandBufferCommonHeader;
 
-typedef struct TextureCommonHeader
+typedef struct TextureContainer
 {
     SDL_GPUTextureCreateInfo info;
-} TextureCommonHeader;
+    bool cycleable; // Swapchain images cannot be cycled
+
+    DriverTexture *active_texture;
+    DriverTexture **textures;
+    Uint32 texture_capacity;
+    Uint32 texture_count;
+
+    char *debug_name;
+} TextureContainer;
 
 typedef struct GraphicsPipelineCommonHeader
 {

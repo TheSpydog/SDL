@@ -432,8 +432,8 @@ void SDL_GPU_BlitCommon(
 {
     CommandBufferCommonHeader *cmdbufHeader = (CommandBufferCommonHeader *)command_buffer;
     SDL_GPURenderPass *render_pass;
-    TextureCommonHeader *src_header = (TextureCommonHeader *)info->source.texture;
-    TextureCommonHeader *dst_header = (TextureCommonHeader *)info->destination.texture;
+    TextureContainer *src_container = (TextureContainer *)info->source.texture;
+    TextureContainer *dst_container = (TextureContainer *)info->destination.texture;
     SDL_GPUGraphicsPipeline *blit_pipeline;
     SDL_GPUColorTargetInfo color_target_info;
     SDL_GPUViewport viewport;
@@ -443,8 +443,8 @@ void SDL_GPU_BlitCommon(
 
     blit_pipeline = SDL_GPU_FetchBlitPipeline(
         cmdbufHeader->device,
-        src_header->info.type,
-        dst_header->info.format,
+        src_container->info.type,
+        dst_container->info.format,
         blit_vertex_shader,
         blit_from_2d_shader,
         blit_from_2d_array_shader,
@@ -497,13 +497,13 @@ void SDL_GPU_BlitCommon(
         &texture_sampler_binding,
         1);
 
-    blit_fragment_uniforms.left = (float)info->source.x / (src_header->info.width >> info->source.mip_level);
-    blit_fragment_uniforms.top = (float)info->source.y / (src_header->info.height >> info->source.mip_level);
-    blit_fragment_uniforms.width = (float)info->source.w / (src_header->info.width >> info->source.mip_level);
-    blit_fragment_uniforms.height = (float)info->source.h / (src_header->info.height >> info->source.mip_level);
+    blit_fragment_uniforms.left = (float)info->source.x / (src_container->info.width >> info->source.mip_level);
+    blit_fragment_uniforms.top = (float)info->source.y / (src_container->info.height >> info->source.mip_level);
+    blit_fragment_uniforms.width = (float)info->source.w / (src_container->info.width >> info->source.mip_level);
+    blit_fragment_uniforms.height = (float)info->source.h / (src_container->info.height >> info->source.mip_level);
     blit_fragment_uniforms.mip_level = info->source.mip_level;
 
-    layer_divisor = (src_header->info.type == SDL_GPU_TEXTURETYPE_3D) ? src_header->info.layer_count_or_depth : 1;
+    layer_divisor = (src_container->info.type == SDL_GPU_TEXTURETYPE_3D) ? src_container->info.layer_count_or_depth : 1;
     blit_fragment_uniforms.layer_or_depth = (float)info->source.layer_or_depth_plane / layer_divisor;
 
     if (info->flip_mode & SDL_FLIP_HORIZONTAL) {
@@ -1799,7 +1799,7 @@ SDL_GPURenderPass *SDL_BeginGPURenderPass(
         CHECK_ANY_PASS_IN_PROGRESS("Cannot begin render pass during another pass!", NULL)
 
         for (Uint32 i = 0; i < num_color_targets; i += 1) {
-            TextureCommonHeader *textureHeader = (TextureCommonHeader *)color_target_infos[i].texture;
+            TextureContainer *textureContainer = (TextureContainer *)color_target_infos[i].texture;
 
             if (color_target_infos[i].cycle && color_target_infos[i].load_op == SDL_GPU_LOADOP_LOAD) {
                 SDL_assert_release(!"Cannot cycle color target when load op is LOAD!");
@@ -1811,49 +1811,49 @@ SDL_GPURenderPass *SDL_BeginGPURenderPass(
                     SDL_assert_release(!"Store op is RESOLVE or RESOLVE_AND_STORE but resolve_texture is NULL!");
                     return NULL;
                 } else {
-                    TextureCommonHeader *resolveTextureHeader = (TextureCommonHeader *)color_target_infos[i].resolve_texture;
-                    if (textureHeader->info.sample_count == SDL_GPU_SAMPLECOUNT_1) {
+                    TextureContainer *resolveContainer = (TextureContainer *)color_target_infos[i].resolve_texture;
+                    if (textureContainer->info.sample_count == SDL_GPU_SAMPLECOUNT_1) {
                         SDL_assert_release(!"Store op is RESOLVE or RESOLVE_AND_STORE but texture is not multisample!");
                         return NULL;
                     }
-                    if (resolveTextureHeader->info.sample_count != SDL_GPU_SAMPLECOUNT_1) {
+                    if (resolveContainer->info.sample_count != SDL_GPU_SAMPLECOUNT_1) {
                         SDL_assert_release(!"Resolve texture must have a sample count of 1!");
                         return NULL;
                     }
-                    if (resolveTextureHeader->info.format != textureHeader->info.format) {
+                    if (resolveContainer->info.format != textureContainer->info.format) {
                         SDL_assert_release(!"Resolve texture must have the same format as its corresponding color target!");
                         return NULL;
                     }
-                    if (resolveTextureHeader->info.type == SDL_GPU_TEXTURETYPE_3D) {
+                    if (resolveContainer->info.type == SDL_GPU_TEXTURETYPE_3D) {
                         SDL_assert_release(!"Resolve texture must not be of TEXTURETYPE_3D!");
                         return NULL;
                     }
-                    if (!(resolveTextureHeader->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
+                    if (!(resolveContainer->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
                         SDL_assert_release(!"Resolve texture usage must include COLOR_TARGET!");
                         return NULL;
                     }
                 }
             }
 
-            if (color_target_infos[i].layer_or_depth_plane >= textureHeader->info.layer_count_or_depth) {
+            if (color_target_infos[i].layer_or_depth_plane >= textureContainer->info.layer_count_or_depth) {
                 SDL_assert_release(!"Color target layer index must be less than the texture's layer count!");
                 return NULL;
             }
 
-            if (color_target_infos[i].mip_level >= textureHeader->info.num_levels) {
+            if (color_target_infos[i].mip_level >= textureContainer->info.num_levels) {
                 SDL_assert_release(!"Color target mip level must be less than the texture's level count!");
                 return NULL;
             }
         }
 
         if (depth_stencil_target_info != NULL) {
-            TextureCommonHeader *textureHeader = (TextureCommonHeader *)depth_stencil_target_info->texture;
-            if (!(textureHeader->info.usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
+            TextureContainer *textureContainer = (TextureContainer *)depth_stencil_target_info->texture;
+            if (!(textureContainer->info.usage & SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET)) {
                 SDL_assert_release(!"Depth target must have been created with the DEPTH_STENCIL_TARGET usage flag!");
                 return NULL;
             }
 
-            if (textureHeader->info.layer_count_or_depth > 255) {
+            if (textureContainer->info.layer_count_or_depth > 255) {
                 SDL_assert_release(!"Cannot bind a depth texture with more than 255 layers!");
                 return NULL;
             }
@@ -2448,18 +2448,18 @@ SDL_GPUComputePass *SDL_BeginGPUComputePass(
         CHECK_ANY_PASS_IN_PROGRESS("Cannot begin compute pass during another pass!", NULL)
 
         for (Uint32 i = 0; i < num_storage_texture_bindings; i += 1) {
-            TextureCommonHeader *header = (TextureCommonHeader *)storage_texture_bindings[i].texture;
-            if (!(header->info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) && !(header->info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE)) {
+            TextureContainer *textureContainer = (TextureContainer *)storage_texture_bindings[i].texture;
+            if (!(textureContainer->info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_WRITE) && !(textureContainer->info.usage & SDL_GPU_TEXTUREUSAGE_COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE)) {
                 SDL_assert_release(!"Texture must be created with COMPUTE_STORAGE_WRITE or COMPUTE_STORAGE_SIMULTANEOUS_READ_WRITE flag");
                 return NULL;
             }
 
-            if (storage_texture_bindings[i].layer >= header->info.layer_count_or_depth) {
+            if (storage_texture_bindings[i].layer >= textureContainer->info.layer_count_or_depth) {
                 SDL_assert_release(!"Storage texture layer index must be less than the texture's layer count!");
                 return NULL;
             }
 
-            if (storage_texture_bindings[i].mip_level >= header->info.num_levels) {
+            if (storage_texture_bindings[i].mip_level >= textureContainer->info.num_levels) {
                 SDL_assert_release(!"Storage texture mip level must be less than the texture's level count!");
                 return NULL;
             }
@@ -2870,9 +2870,9 @@ void SDL_CopyGPUTextureToTexture(
             return;
         }
 
-        TextureCommonHeader *srcHeader = (TextureCommonHeader *)source->texture;
-        TextureCommonHeader *dstHeader = (TextureCommonHeader *)destination->texture;
-        if (srcHeader->info.format != dstHeader->info.format) {
+        TextureContainer *srcContainer = (TextureContainer *)source->texture;
+        TextureContainer *dstContainer = (TextureContainer *)destination->texture;
+        if (srcContainer->info.format != dstContainer->info.format) {
             SDL_assert_release(!"Source and destination textures must have the same format!");
             return;
         }
@@ -3037,13 +3037,13 @@ void SDL_GenerateMipmapsForGPUTexture(
         CHECK_COMMAND_BUFFER
         CHECK_ANY_PASS_IN_PROGRESS("Cannot generate mipmaps during a pass!", )
 
-        TextureCommonHeader *header = (TextureCommonHeader *)texture;
-        if (header->info.num_levels <= 1) {
+        TextureContainer *textureContainer = (TextureContainer *)texture;
+        if (textureContainer->info.num_levels <= 1) {
             SDL_assert_release(!"Cannot generate mipmaps for texture with num_levels <= 1!");
             return;
         }
 
-        if (!(header->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) || !(header->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
+        if (!(textureContainer->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) || !(textureContainer->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET)) {
             SDL_assert_release(!"GenerateMipmaps texture must be created with SAMPLER and COLOR_TARGET usage flags!");
             return;
         }
@@ -3081,30 +3081,30 @@ void SDL_BlitGPUTexture(
 
         // Validation
         bool failed = false;
-        TextureCommonHeader *srcHeader = (TextureCommonHeader *)info->source.texture;
-        TextureCommonHeader *dstHeader = (TextureCommonHeader *)info->destination.texture;
+        TextureContainer *srcContainer = (TextureContainer *)info->source.texture;
+        TextureContainer *dstContainer = (TextureContainer *)info->destination.texture;
 
-        if (srcHeader == NULL) {
+        if (srcContainer == NULL) {
             SDL_assert_release(!"Blit source texture must be non-NULL");
             return; // attempting to proceed will crash
         }
-        if (dstHeader == NULL) {
+        if (dstContainer == NULL) {
             SDL_assert_release(!"Blit destination texture must be non-NULL");
             return; // attempting to proceed will crash
         }
-        if (srcHeader->info.sample_count != SDL_GPU_SAMPLECOUNT_1) {
+        if (srcContainer->info.sample_count != SDL_GPU_SAMPLECOUNT_1) {
             SDL_assert_release(!"Blit source texture must have a sample count of 1");
             failed = true;
         }
-        if ((srcHeader->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) == 0) {
+        if ((srcContainer->info.usage & SDL_GPU_TEXTUREUSAGE_SAMPLER) == 0) {
             SDL_assert_release(!"Blit source texture must be created with the SAMPLER usage flag");
             failed = true;
         }
-        if ((dstHeader->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) == 0) {
+        if ((dstContainer->info.usage & SDL_GPU_TEXTUREUSAGE_COLOR_TARGET) == 0) {
             SDL_assert_release(!"Blit destination texture must be created with the COLOR_TARGET usage flag");
             failed = true;
         }
-        if (IsDepthFormat(srcHeader->info.format)) {
+        if (IsDepthFormat(srcContainer->info.format)) {
             SDL_assert_release(!"Blit source texture cannot have a depth format");
             failed = true;
         }
