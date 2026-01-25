@@ -1432,7 +1432,6 @@ static void D3D12_INTERNAL_ReleaseTextureContainer(
     SDL_DestroyProperties(container->info.props);
 
     // Containers are just client handles, so we can destroy immediately
-    SDL_free(container->debug_name);
     SDL_free(container->textures);
     SDL_free(container);
 
@@ -2105,9 +2104,7 @@ static void D3D12_SetTextureName(
     TextureContainer *container = (TextureContainer *)texture;
 
     if (renderer->debug_mode && text != NULL) {
-        SDL_free(container->debug_name);
-
-        container->debug_name = SDL_strdup(text);
+        SDL_SetStringProperty(container->info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, text);
 
         for (Uint32 i = 0; i < container->texture_count; i += 1) {
             D3D12_INTERNAL_SetResourceName(
@@ -3339,8 +3336,7 @@ static SDL_GPUShader *D3D12_CreateShader(
 static D3D12Texture *D3D12_INTERNAL_CreateTexture(
     D3D12Renderer *renderer,
     const SDL_GPUTextureCreateInfo *createinfo,
-    bool isSwapchainTexture,
-    const char *debugName)
+    bool isSwapchainTexture)
 {
     D3D12Texture *texture;
     ID3D12Resource *handle;
@@ -3630,10 +3626,12 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
         }
     }
 
-    D3D12_INTERNAL_SetResourceName(
-        renderer,
-        texture->resource,
-        debugName);
+    if (renderer->debug_mode && SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
+        D3D12_INTERNAL_SetResourceName(
+            renderer,
+            texture->resource,
+            SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
+    }
 
     return texture;
 }
@@ -3664,18 +3662,12 @@ static SDL_GPUTexture *D3D12_CreateTexture(
         return NULL;
     }
 
-    container->debug_name = NULL;
-    if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
-        container->debug_name = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
-    }
-
     container->cycleable = true;
 
     D3D12Texture *texture = D3D12_INTERNAL_CreateTexture(
         (D3D12Renderer *)driverData,
         createinfo,
-        false,
-        container->debug_name);
+        false);
 
     if (!texture) {
         SDL_free(container->textures);
@@ -4192,8 +4184,7 @@ static void D3D12_INTERNAL_CycleActiveTexture(
     texture = D3D12_INTERNAL_CreateTexture(
         renderer,
         &container->info,
-        false,
-        container->debug_name);
+        false);
 
     if (!texture) {
         return;
@@ -6761,7 +6752,6 @@ static bool D3D12_INTERNAL_InitializeSwapchainTexture(
     pTextureContainer->info.sample_count = SDL_GPU_SAMPLECOUNT_1;
     pTextureContainer->info.format = SwapchainCompositionToSDLTextureFormat[composition];
 
-    pTextureContainer->debug_name = NULL;
     pTextureContainer->textures = (DriverTexture **)SDL_calloc(1, sizeof(DriverTexture *));
     if (!pTextureContainer->textures) {
         SDL_free(pTexture->subresources);

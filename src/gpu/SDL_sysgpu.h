@@ -105,8 +105,6 @@ typedef struct TextureContainer
     DriverTexture **textures;
     Uint32 texture_capacity;
     Uint32 texture_count;
-
-    char *debug_name;
 } TextureContainer;
 
 typedef struct GraphicsPipelineCommonHeader

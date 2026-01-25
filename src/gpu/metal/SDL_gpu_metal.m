@@ -902,9 +902,6 @@ static void METAL_INTERNAL_DestroyTextureContainer(
         SDL_free(texture);
     }
     SDL_DestroyProperties(container->info.props);
-    if (container->debug_name != NULL) {
-        SDL_free(container->debug_name);
-    }
     SDL_free(container->textures);
     SDL_free(container);
 }
@@ -1264,11 +1261,7 @@ static void METAL_SetTextureName(
         TextureContainer *container = (TextureContainer *)texture;
 
         if (renderer->debugMode && text != NULL) {
-            if (container->debug_name != NULL) {
-                SDL_free(container->debug_name);
-            }
-
-            container->debug_name = SDL_strdup(text);
+            SDL_SetStringProperty(container->info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, text);
 
             for (Uint32 i = 0; i < container->texture_count; i += 1) {
                 ((MetalTexture *)container->textures[i])->handle.label = @(text);
@@ -1518,11 +1511,6 @@ static SDL_GPUTexture *METAL_CreateTexture(
         container->textures = SDL_calloc(
             container->texture_capacity, sizeof(MetalTexture *));
         container->textures[0] = container->active_texture;
-        container->debug_name = NULL;
-
-        if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
-            container->debug_name = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
-        }
 
         return (SDL_GPUTexture *)container;
     }

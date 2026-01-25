@@ -5493,26 +5493,6 @@ static void VULKAN_SetBufferName(
     }
 }
 
-static void VULKAN_INTERNAL_SetTextureName(
-    VulkanRenderer *renderer,
-    VulkanTexture *texture,
-    const char *text)
-{
-    VkDebugUtilsObjectNameInfoEXT nameInfo;
-
-    if (renderer->debugMode && renderer->supportsDebugUtils) {
-        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
-        nameInfo.pNext = NULL;
-        nameInfo.pObjectName = text;
-        nameInfo.objectType = VK_OBJECT_TYPE_IMAGE;
-        nameInfo.objectHandle = (uint64_t)texture->image;
-
-        renderer->vkSetDebugUtilsObjectNameEXT(
-            renderer->logicalDevice,
-            &nameInfo);
-    }
-}
-
 static void VULKAN_SetTextureName(
     SDL_GPURenderer *driverData,
     SDL_GPUTexture *texture,
@@ -5520,23 +5500,21 @@ static void VULKAN_SetTextureName(
 {
     VulkanRenderer *renderer = (VulkanRenderer *)driverData;
     TextureContainer *container = (TextureContainer *)texture;
-    size_t textLength = SDL_strlen(text) + 1;
+    VkDebugUtilsObjectNameInfoEXT nameInfo;
 
     if (renderer->debugMode && renderer->supportsDebugUtils) {
-        container->debug_name = SDL_realloc(
-            container->debug_name,
-            textLength);
+        SDL_SetStringProperty(container->info.props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, text);
 
-        SDL_utf8strlcpy(
-            container->debug_name,
-            text,
-            textLength);
+        nameInfo.sType = VK_STRUCTURE_TYPE_DEBUG_UTILS_OBJECT_NAME_INFO_EXT;
+        nameInfo.pNext = NULL;
+        nameInfo.pObjectName = text; // the debug layer copies the text internally
+        nameInfo.objectType = VK_OBJECT_TYPE_IMAGE;
 
         for (Uint32 i = 0; i < container->texture_count; i += 1) {
-            VULKAN_INTERNAL_SetTextureName(
-                renderer,
-                (VulkanTexture *)container->textures[i],
-                text);
+            nameInfo.objectHandle = (uint64_t)((VulkanTexture *)container->textures[i])->image;
+            renderer->vkSetDebugUtilsObjectNameEXT(
+                renderer->logicalDevice,
+                &nameInfo);
         }
     }
 }
@@ -6826,11 +6804,6 @@ static SDL_GPUTexture *VULKAN_CreateTexture(
     container->textures = SDL_malloc(
         container->texture_capacity * sizeof(VulkanTexture *));
     container->textures[0] = container->active_texture;
-    container->debug_name = NULL;
-
-    if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
-        container->debug_name = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
-    }
 
     texture->container = container;
     texture->containerIndex = 0;
@@ -6933,7 +6906,6 @@ static void VULKAN_ReleaseTexture(
     SDL_DestroyProperties(vulkanTextureContainer->info.props);
 
     // Containers are just client handles, so we can destroy immediately
-    SDL_free(vulkanTextureContainer->debug_name);
     SDL_free(vulkanTextureContainer->textures);
     SDL_free(vulkanTextureContainer);
 
