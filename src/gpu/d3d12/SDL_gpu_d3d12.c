@@ -794,7 +794,6 @@ typedef struct D3D12TextureSubresource
 struct D3D12Texture
 {
     TextureContainer *container;
-    Uint32 containerIndex;
 
     D3D12TextureSubresource *subresources;
     Uint32 subresourceCount; /* layerCount * num_levels */
@@ -3636,52 +3635,21 @@ static D3D12Texture *D3D12_INTERNAL_CreateTexture(
     return texture;
 }
 
-static SDL_GPUTexture *D3D12_CreateTexture(
+static DriverTexture *D3D12_CreateTexture(
     SDL_GPURenderer *driverData,
-    const SDL_GPUTextureCreateInfo *createinfo)
+    const SDL_GPUTextureCreateInfo *createinfo,
+    TextureContainer *container)
 {
-    TextureContainer *container = (TextureContainer *)SDL_calloc(1, sizeof(TextureContainer));
-    if (!container) {
-        return NULL;
-    }
-
-    // Copy properties so we don't lose information when the client destroys them
-    container->info = *createinfo;
-    container->info.props = SDL_CreateProperties();
-    if (createinfo->props) {
-        SDL_CopyProperties(createinfo->props, container->info.props);
-    }
-
-    container->texture_capacity = 1;
-    container->texture_count = 1;
-    container->textures = (DriverTexture **)SDL_calloc(
-        container->texture_capacity, sizeof(DriverTexture *));
-
-    if (!container->textures) {
-        SDL_free(container);
-        return NULL;
-    }
-
-    container->cycleable = true;
-
     D3D12Texture *texture = D3D12_INTERNAL_CreateTexture(
         (D3D12Renderer *)driverData,
         createinfo,
         false);
 
-    if (!texture) {
-        SDL_free(container->textures);
-        SDL_free(container);
-        return NULL;
+    if (texture) {
+        texture->container = container;
     }
 
-    container->textures[0] = (DriverTexture *)texture;
-    container->active_texture = (DriverTexture *)texture;
-
-    texture->container = container;
-    texture->containerIndex = 0;
-
-    return (SDL_GPUTexture *)container;
+    return (DriverTexture *)texture;
 }
 
 static D3D12Buffer *D3D12_INTERNAL_CreateBuffer(
@@ -4199,7 +4167,6 @@ static void D3D12_INTERNAL_CycleActiveTexture(
 
     container->textures[container->texture_count] = (DriverTexture *)texture;
     texture->container = container;
-    texture->containerIndex = container->texture_count;
     container->texture_count += 1;
 
     container->active_texture = (DriverTexture *)texture;
@@ -6767,7 +6734,6 @@ static bool D3D12_INTERNAL_InitializeSwapchainTexture(
     pTextureContainer->cycleable = false;
 
     pTexture->container = pTextureContainer;
-    pTexture->containerIndex = 0;
 
     // Create the SRV for the swapchain
     D3D12_INTERNAL_AssignStagingDescriptorHandle(

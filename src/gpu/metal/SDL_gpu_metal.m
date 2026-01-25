@@ -1478,41 +1478,16 @@ static bool METAL_SupportsSampleCount(
     }
 }
 
-static SDL_GPUTexture *METAL_CreateTexture(
+static DriverTexture *METAL_CreateTexture(
     SDL_GPURenderer *driverData,
-    const SDL_GPUTextureCreateInfo *createinfo)
+    const SDL_GPUTextureCreateInfo *createinfo,
+    TextureContainer *container)
 {
     @autoreleasepool {
         MetalRenderer *renderer = (MetalRenderer *)driverData;
-        TextureContainer *container;
-        MetalTexture *texture;
-
-        texture = METAL_INTERNAL_CreateTexture(
+        return (DriverTexture *)METAL_INTERNAL_CreateTexture(
             renderer,
             createinfo);
-
-        if (texture == NULL) {
-            SET_STRING_ERROR_AND_RETURN("Failed to create texture", NULL);
-        }
-
-        container = SDL_calloc(1, sizeof(TextureContainer));
-        container->cycleable = true;
-
-        // Copy properties so we don't lose information when the client destroys them
-        container->info = *createinfo;
-        container->info.props = SDL_CreateProperties();
-        if (createinfo->props) {
-            SDL_CopyProperties(createinfo->props, container->info.props);
-        }
-
-        container->active_texture = (DriverTexture *)texture;
-        container->texture_capacity = 1;
-        container->texture_count = 1;
-        container->textures = SDL_calloc(
-            container->texture_capacity, sizeof(MetalTexture *));
-        container->textures[0] = container->active_texture;
-
-        return (SDL_GPUTexture *)container;
     }
 }
 

@@ -6771,44 +6771,23 @@ static bool VULKAN_SupportsSampleCount(
     return !!(bits & vkSampleCount);
 }
 
-static SDL_GPUTexture *VULKAN_CreateTexture(
+static DriverTexture *VULKAN_CreateTexture(
     SDL_GPURenderer *driverData,
-    const SDL_GPUTextureCreateInfo *createinfo)
+    const SDL_GPUTextureCreateInfo *createinfo,
+    TextureContainer *container)
 {
     VulkanRenderer *renderer = (VulkanRenderer *)driverData;
-    VulkanTexture *texture;
-    TextureContainer *container;
-
-    texture = VULKAN_INTERNAL_CreateTexture(
+    VulkanTexture *texture = VULKAN_INTERNAL_CreateTexture(
         renderer,
         true,
         createinfo);
 
-    if (texture == NULL) {
-        return NULL;
+    if (texture) {
+        texture->container = container;
+        texture->containerIndex = 0;
     }
 
-    container = SDL_malloc(sizeof(TextureContainer));
-
-    // Copy properties so we don't lose information when the client destroys them
-    container->info = *createinfo;
-    container->info.props = SDL_CreateProperties();
-    if (createinfo->props) {
-        SDL_CopyProperties(createinfo->props, container->info.props);
-    }
-
-    container->cycleable = true;
-    container->active_texture = (DriverTexture *)texture;
-    container->texture_capacity = 1;
-    container->texture_count = 1;
-    container->textures = SDL_malloc(
-        container->texture_capacity * sizeof(VulkanTexture *));
-    container->textures[0] = container->active_texture;
-
-    texture->container = container;
-    texture->containerIndex = 0;
-
-    return (SDL_GPUTexture *)container;
+    return (DriverTexture *)texture;
 }
 
 static SDL_GPUBuffer *VULKAN_CreateBuffer(

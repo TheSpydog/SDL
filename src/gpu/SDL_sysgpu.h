@@ -697,9 +697,10 @@ struct SDL_GPUDevice
         SDL_GPURenderer *driverData,
         const SDL_GPUShaderCreateInfo *createinfo);
 
-    SDL_GPUTexture *(*CreateTexture)(
+    DriverTexture *(*CreateTexture)(
         SDL_GPURenderer *driverData,
-        const SDL_GPUTextureCreateInfo *createinfo);
+        const SDL_GPUTextureCreateInfo *createinfo,
+        TextureContainer *container);
 
     SDL_GPUBuffer *(*CreateBuffer)(
         SDL_GPURenderer *driverData,

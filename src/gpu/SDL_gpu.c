@@ -1368,9 +1368,50 @@ SDL_GPUTexture *SDL_CreateGPUTexture(
         }
     }
 
-    return device->CreateTexture(
+    // Create the container
+    TextureContainer *container = (TextureContainer *)SDL_calloc(1, sizeof(TextureContainer));
+    if (!container) {
+        SDL_SetError("Failed to allocate SDL_GPUTexture");
+        return NULL;
+    }
+
+    container->info = *createinfo;
+    container->cycleable = true;
+
+    // Copy properties so we don't lose information when the client destroys them
+    container->info.props = SDL_CreateProperties();
+    if (createinfo->props) {
+        SDL_CopyProperties(createinfo->props, container->info.props);
+    }
+
+    // Allocate the cycle array
+    container->texture_capacity = 1;
+    container->texture_count = 1;
+    container->textures = (DriverTexture **)SDL_calloc(
+        container->texture_capacity, sizeof(DriverTexture *));
+
+    if (!container->textures) {
+        SDL_SetError("Failed to allocate SDL_GPUTexture");
+        SDL_free(container);
+        return NULL;
+    }
+
+    // Create the first texture in the cycle
+    DriverTexture *texture = device->CreateTexture(
         device->driverData,
-        createinfo);
+        createinfo,
+        container);
+
+    if (!texture) {
+        SDL_free(container->textures);
+        SDL_free(container);
+        return NULL;
+    }
+
+    container->active_texture = texture;
+    container->textures[0] = texture;
+
+    return (SDL_GPUTexture *)container;
 }
 
 SDL_GPUBuffer *SDL_CreateGPUBuffer(
