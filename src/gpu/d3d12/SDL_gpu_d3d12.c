@@ -766,12 +766,14 @@ typedef struct D3D12DescriptorHeap D3D12DescriptorHeap;
 typedef struct D3D12StagingDescriptor D3D12StagingDescriptor;
 typedef struct D3D12TextureDownload D3D12TextureDownload;
 
-typedef struct D3D12Fence
+typedef struct D3D12Fence D3D12Fence;
+struct D3D12Fence
 {
+    D3D12Fence *next;
     ID3D12Fence *handle;
     HANDLE event; // used for blocking
     SDL_AtomicInt referenceCount;
-} D3D12Fence;
+};
 
 struct D3D12DescriptorHeap
 {
@@ -853,6 +855,8 @@ typedef struct D3D12TextureSubresource
 
 struct D3D12Texture
 {
+    D3D12Texture *next;
+
     D3D12TextureContainer *container;
     Uint32 containerIndex;
 
@@ -868,15 +872,19 @@ struct D3D12Texture
     bool externallyManaged;
 };
 
-typedef struct D3D12Sampler
+typedef struct D3D12Sampler D3D12Sampler;
+struct D3D12Sampler
 {
+    D3D12Sampler *next;
     SDL_GPUSamplerCreateInfo createInfo;
     D3D12StagingDescriptor handle;
     SDL_AtomicInt referenceCount;
-} D3D12Sampler;
+};
 
-typedef struct D3D12WindowData
+typedef struct D3D12WindowData D3D12WindowData;
+struct D3D12WindowData
 {
+    D3D12WindowData *next;
     SDL_Window *window;
     D3D12Renderer *renderer;
     int refcount;
@@ -897,7 +905,7 @@ typedef struct D3D12WindowData
     Uint32 width;
     Uint32 height;
     bool needsSwapchainRecreate;
-} D3D12WindowData;
+};
 
 typedef struct D3D12PresentData
 {
@@ -971,52 +979,24 @@ struct D3D12Renderer
     Uint32 blitPipelineCount;
     Uint32 blitPipelineCapacity;
 
-    // Resources
+    // Linked Lists of Resources
 
-    D3D12CommandBuffer **availableCommandBuffers;
-    Uint32 availableCommandBufferCount;
-    Uint32 availableCommandBufferCapacity;
-
-    D3D12CommandBuffer **submittedCommandBuffers;
-    Uint32 submittedCommandBufferCount;
-    Uint32 submittedCommandBufferCapacity;
-
-    D3D12UniformBuffer **uniformBufferPool;
-    Uint32 uniformBufferPoolCount;
-    Uint32 uniformBufferPoolCapacity;
-
-    D3D12WindowData **claimedWindows;
-    Uint32 claimedWindowCount;
-    Uint32 claimedWindowCapacity;
-
-    D3D12Fence **availableFences;
-    Uint32 availableFenceCount;
-    Uint32 availableFenceCapacity;
+    D3D12CommandBuffer *firstAvailableCommandBuffer;
+    D3D12CommandBuffer *firstSubmittedCommandBuffer;
+    D3D12UniformBuffer *firstAvailableUniformBuffer;
+    D3D12Fence *firstAvailableFence;
+    D3D12WindowData *firstClaimedWindow;
 
     D3D12StagingDescriptorPool *stagingDescriptorPools[D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES];
     D3D12GPUDescriptorHeapPool gpuDescriptorHeapPools[2];
 
     // Deferred resource releasing
 
-    D3D12Buffer **buffersToDestroy;
-    Uint32 buffersToDestroyCount;
-    Uint32 buffersToDestroyCapacity;
-
-    D3D12Texture **texturesToDestroy;
-    Uint32 texturesToDestroyCount;
-    Uint32 texturesToDestroyCapacity;
-
-    D3D12Sampler **samplersToDestroy;
-    Uint32 samplersToDestroyCount;
-    Uint32 samplersToDestroyCapacity;
-
-    D3D12GraphicsPipeline **graphicsPipelinesToDestroy;
-    Uint32 graphicsPipelinesToDestroyCount;
-    Uint32 graphicsPipelinesToDestroyCapacity;
-
-    D3D12ComputePipeline **computePipelinesToDestroy;
-    Uint32 computePipelinesToDestroyCount;
-    Uint32 computePipelinesToDestroyCapacity;
+    D3D12Buffer *firstBufferToDestroy;
+    D3D12Texture *firstTextureToDestroy;
+    D3D12Sampler *firstSamplerToDestroy;
+    D3D12GraphicsPipeline *firstGraphicsPipelineToDestroy;
+    D3D12ComputePipeline *firstComputePipelineToDestroy;
 
     // Locks
     SDL_Mutex *acquireCommandBufferLock;
@@ -1041,6 +1021,8 @@ struct D3D12CommandBuffer
 
     // non owning parent reference
     D3D12Renderer *renderer;
+
+    D3D12CommandBuffer *next;
 
     ID3D12CommandAllocator *commandAllocator;
     ID3D12GraphicsCommandList *graphicsCommandList;
@@ -1186,6 +1168,8 @@ struct D3D12GraphicsPipeline
 {
     GraphicsPipelineCommonHeader header;
 
+    D3D12GraphicsPipeline *next;
+
     ID3D12PipelineState *pipelineState;
     D3D12GraphicsRootSignature *rootSignature;
     SDL_GPUPrimitiveType primitiveType;
@@ -1212,6 +1196,8 @@ struct D3D12ComputePipeline
 {
     ComputePipelineCommonHeader header;
 
+    D3D12ComputePipeline *next;
+
     ID3D12PipelineState *pipelineState;
     D3D12ComputeRootSignature *rootSignature;
 
@@ -1233,6 +1219,8 @@ struct D3D12TextureDownload
 
 struct D3D12Buffer
 {
+    D3D12Buffer *next;
+
     D3D12BufferContainer *container;
     Uint32 containerIndex;
 
@@ -1265,6 +1253,7 @@ struct D3D12BufferContainer
 
 struct D3D12UniformBuffer
 {
+    D3D12UniformBuffer *next;
     D3D12Buffer *buffer;
     Uint32 writeOffset;
     Uint32 drawOffset;
@@ -1404,15 +1393,8 @@ static void D3D12_INTERNAL_ReleaseBuffer(
 {
     SDL_LockMutex(renderer->disposeLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->buffersToDestroy,
-        D3D12Buffer *,
-        renderer->buffersToDestroyCount + 1,
-        renderer->buffersToDestroyCapacity,
-        renderer->buffersToDestroyCapacity * 2);
-
-    renderer->buffersToDestroy[renderer->buffersToDestroyCount] = buffer;
-    renderer->buffersToDestroyCount += 1;
+    buffer->next = renderer->firstBufferToDestroy;
+    renderer->firstBufferToDestroy = buffer;
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -1478,15 +1460,8 @@ static void D3D12_INTERNAL_ReleaseTexture(
 {
     SDL_LockMutex(renderer->disposeLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->texturesToDestroy,
-        D3D12Texture *,
-        renderer->texturesToDestroyCount + 1,
-        renderer->texturesToDestroyCapacity,
-        renderer->texturesToDestroyCapacity * 2);
-
-    renderer->texturesToDestroy[renderer->texturesToDestroyCount] = texture;
-    renderer->texturesToDestroyCount += 1;
+    texture->next = renderer->firstTextureToDestroy;
+    renderer->firstTextureToDestroy = texture;
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -1572,15 +1547,8 @@ static void D3D12_INTERNAL_ReleaseFenceToPool(
 {
     SDL_LockMutex(renderer->fenceLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->availableFences,
-        D3D12Fence *,
-        renderer->availableFenceCount + 1,
-        renderer->availableFenceCapacity,
-        renderer->availableFenceCapacity * 2);
-
-    renderer->availableFences[renderer->availableFenceCount] = fence;
-    renderer->availableFenceCount += 1;
+    fence->next = renderer->firstAvailableFence;
+    renderer->firstAvailableFence = fence;
 
     SDL_UnlockMutex(renderer->fenceLock);
 }
@@ -1670,10 +1638,11 @@ static void D3D12_INTERNAL_DestroyFence(D3D12Fence *fence)
 static void D3D12_INTERNAL_DestroyRenderer(D3D12Renderer *renderer)
 {
     // Release uniform buffers
-    for (Uint32 i = 0; i < renderer->uniformBufferPoolCount; i += 1) {
-        D3D12_INTERNAL_DestroyBuffer(
-            renderer->uniformBufferPool[i]->buffer);
-        SDL_free(renderer->uniformBufferPool[i]);
+    for (D3D12UniformBuffer *ubo = renderer->firstAvailableUniformBuffer; ubo != NULL;) {
+        D3D12UniformBuffer *next = ubo->next;
+        D3D12_INTERNAL_DestroyBuffer(ubo->buffer);
+        SDL_free(ubo);
+        ubo = next;
     }
 
     // Clean up descriptor heaps
@@ -1701,32 +1670,18 @@ static void D3D12_INTERNAL_DestroyRenderer(D3D12Renderer *renderer)
     }
 
     // Release command buffers
-    for (Uint32 i = 0; i < renderer->availableCommandBufferCount; i += 1) {
-        if (renderer->availableCommandBuffers[i]) {
-            D3D12_INTERNAL_DestroyCommandBuffer(renderer->availableCommandBuffers[i]);
-            renderer->availableCommandBuffers[i] = NULL;
-        }
+    for (D3D12CommandBuffer *cmdbuf = renderer->firstAvailableCommandBuffer; cmdbuf != NULL;) {
+        D3D12CommandBuffer *next = cmdbuf->next;
+        D3D12_INTERNAL_DestroyCommandBuffer(cmdbuf);
+        cmdbuf = next;
     }
 
     // Release fences
-    for (Uint32 i = 0; i < renderer->availableFenceCount; i += 1) {
-        if (renderer->availableFences[i]) {
-            D3D12_INTERNAL_DestroyFence(renderer->availableFences[i]);
-            renderer->availableFences[i] = NULL;
-        }
+    for (D3D12Fence *fence = renderer->firstAvailableFence; fence != NULL;) {
+        D3D12Fence *next = fence->next;
+        D3D12_INTERNAL_DestroyFence(fence);
+        fence = next;
     }
-
-    // Clean up allocations
-    SDL_free(renderer->availableCommandBuffers);
-    SDL_free(renderer->submittedCommandBuffers);
-    SDL_free(renderer->uniformBufferPool);
-    SDL_free(renderer->claimedWindows);
-    SDL_free(renderer->availableFences);
-    SDL_free(renderer->buffersToDestroy);
-    SDL_free(renderer->texturesToDestroy);
-    SDL_free(renderer->samplersToDestroy);
-    SDL_free(renderer->graphicsPipelinesToDestroy);
-    SDL_free(renderer->computePipelinesToDestroy);
 
     SDL_DestroyProperties(renderer->props);
 
@@ -1816,8 +1771,10 @@ static void D3D12_DestroyDevice(SDL_GPUDevice *device)
     D3D12_Wait((SDL_GPURenderer *)renderer);
 
     // Release window data
-    for (Sint32 i = renderer->claimedWindowCount - 1; i >= 0; i -= 1) {
-        D3D12_ReleaseWindow((SDL_GPURenderer *)renderer, renderer->claimedWindows[i]->window);
+    for (D3D12WindowData *windowData = renderer->firstClaimedWindow; windowData != NULL;) {
+        D3D12WindowData *next = windowData->next;
+        D3D12_ReleaseWindow((SDL_GPURenderer *)renderer, windowData->window);
+        windowData = next;
     }
 
     D3D12_INTERNAL_DestroyRenderer(renderer);
@@ -4106,15 +4063,8 @@ static void D3D12_ReleaseSampler(
 
     SDL_LockMutex(renderer->disposeLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->samplersToDestroy,
-        D3D12Sampler *,
-        renderer->samplersToDestroyCount + 1,
-        renderer->samplersToDestroyCapacity,
-        renderer->samplersToDestroyCapacity * 2);
-
-    renderer->samplersToDestroy[renderer->samplersToDestroyCount] = d3d12Sampler;
-    renderer->samplersToDestroyCount += 1;
+    d3d12Sampler->next = renderer->firstSamplerToDestroy;
+    renderer->firstSamplerToDestroy = d3d12Sampler;
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -4166,15 +4116,8 @@ static void D3D12_ReleaseComputePipeline(
 
     SDL_LockMutex(renderer->disposeLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->computePipelinesToDestroy,
-        D3D12ComputePipeline *,
-        renderer->computePipelinesToDestroyCount + 1,
-        renderer->computePipelinesToDestroyCapacity,
-        renderer->computePipelinesToDestroyCapacity * 2);
-
-    renderer->computePipelinesToDestroy[renderer->computePipelinesToDestroyCount] = d3d12ComputePipeline;
-    renderer->computePipelinesToDestroyCount += 1;
+    d3d12ComputePipeline->next = renderer->firstComputePipelineToDestroy;
+    renderer->firstComputePipelineToDestroy = d3d12ComputePipeline;
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -4188,15 +4131,8 @@ static void D3D12_ReleaseGraphicsPipeline(
 
     SDL_LockMutex(renderer->disposeLock);
 
-    EXPAND_ARRAY_IF_NEEDED(
-        renderer->graphicsPipelinesToDestroy,
-        D3D12GraphicsPipeline *,
-        renderer->graphicsPipelinesToDestroyCount + 1,
-        renderer->graphicsPipelinesToDestroyCapacity,
-        renderer->graphicsPipelinesToDestroyCapacity * 2);
-
-    renderer->graphicsPipelinesToDestroy[renderer->graphicsPipelinesToDestroyCount] = d3d12GraphicsPipeline;
-    renderer->graphicsPipelinesToDestroyCount += 1;
+    d3d12GraphicsPipeline->next = renderer->firstGraphicsPipelineToDestroy;
+    renderer->firstGraphicsPipelineToDestroy = d3d12GraphicsPipeline;
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -4634,9 +4570,9 @@ static D3D12UniformBuffer *D3D12_INTERNAL_AcquireUniformBufferFromPool(
 
     SDL_LockMutex(renderer->acquireUniformBufferLock);
 
-    if (renderer->uniformBufferPoolCount > 0) {
-        uniformBuffer = renderer->uniformBufferPool[renderer->uniformBufferPoolCount - 1];
-        renderer->uniformBufferPoolCount -= 1;
+    if (renderer->firstAvailableUniformBuffer != NULL) {
+        uniformBuffer = renderer->firstAvailableUniformBuffer;
+        renderer->firstAvailableUniformBuffer = renderer->firstAvailableUniformBuffer->next;
     } else {
         uniformBuffer = (D3D12UniformBuffer *)SDL_calloc(1, sizeof(D3D12UniformBuffer));
         if (!uniformBuffer) {
@@ -4671,21 +4607,6 @@ static D3D12UniformBuffer *D3D12_INTERNAL_AcquireUniformBufferFromPool(
     D3D12_INTERNAL_TrackUniformBuffer(commandBuffer, uniformBuffer);
 
     return uniformBuffer;
-}
-
-static void D3D12_INTERNAL_ReturnUniformBufferToPool(
-    D3D12Renderer *renderer,
-    D3D12UniformBuffer *uniformBuffer)
-{
-    if (renderer->uniformBufferPoolCount >= renderer->uniformBufferPoolCapacity) {
-        renderer->uniformBufferPoolCapacity *= 2;
-        renderer->uniformBufferPool = (D3D12UniformBuffer **)SDL_realloc(
-            renderer->uniformBufferPool,
-            renderer->uniformBufferPoolCapacity * sizeof(D3D12UniformBuffer *));
-    }
-
-    renderer->uniformBufferPool[renderer->uniformBufferPoolCount] = uniformBuffer;
-    renderer->uniformBufferPoolCount += 1;
 }
 
 static void D3D12_INTERNAL_PushUniformData(
@@ -7194,14 +7115,8 @@ static bool D3D12_ClaimWindow(
             SDL_SetPointerProperty(SDL_GetWindowProperties(window), WINDOW_PROPERTY_DATA, windowData);
 
             SDL_LockMutex(renderer->windowLock);
-            if (renderer->claimedWindowCount >= renderer->claimedWindowCapacity) {
-                renderer->claimedWindowCapacity *= 2;
-                renderer->claimedWindows = (D3D12WindowData **)SDL_realloc(
-                    renderer->claimedWindows,
-                    renderer->claimedWindowCapacity * sizeof(D3D12WindowData *));
-            }
-            renderer->claimedWindows[renderer->claimedWindowCount] = windowData;
-            renderer->claimedWindowCount += 1;
+            windowData->next = renderer->firstClaimedWindow;
+            renderer->firstClaimedWindow = windowData;
             SDL_UnlockMutex(renderer->windowLock);
 
             SDL_AddWindowEventWatch(SDL_WINDOW_EVENT_WATCH_NORMAL, D3D12_INTERNAL_OnWindowResize, window);
@@ -7252,12 +7167,18 @@ static void D3D12_ReleaseWindow(
     D3D12_INTERNAL_DestroySwapchain(renderer, windowData);
 
     SDL_LockMutex(renderer->windowLock);
-    for (Uint32 i = 0; i < renderer->claimedWindowCount; i += 1) {
-        if (renderer->claimedWindows[i]->window == window) {
-            renderer->claimedWindows[i] = renderer->claimedWindows[renderer->claimedWindowCount - 1];
-            renderer->claimedWindowCount -= 1;
+
+    D3D12WindowData *prev = NULL;
+    for (D3D12WindowData* curr = renderer->firstClaimedWindow; curr != NULL; curr = curr->next) {
+        if (curr->window == window) {
+            if (prev) {
+                prev->next = curr->next;
+            } else {
+                renderer->firstClaimedWindow = curr->next;
+            }
             break;
         }
+        prev = curr;
     }
     SDL_UnlockMutex(renderer->windowLock);
 
@@ -7318,9 +7239,7 @@ static bool D3D12_SetAllowedFramesInFlight(
     }
 
     // Destroy all swapchains
-    for (Uint32 i = 0; i < renderer->claimedWindowCount; i += 1) {
-        D3D12WindowData *windowData = renderer->claimedWindows[i];
-
+    for (D3D12WindowData *windowData = renderer->firstClaimedWindow; windowData != NULL; windowData = windowData->next) {
         D3D12_INTERNAL_DestroySwapchain(renderer, windowData);
     }
 
@@ -7328,9 +7247,7 @@ static bool D3D12_SetAllowedFramesInFlight(
     renderer->allowedFramesInFlight = allowedFramesInFlight;
 
     // Recreate all swapchains
-    for (Uint32 i = 0; i < renderer->claimedWindowCount; i += 1) {
-        D3D12WindowData *windowData = renderer->claimedWindows[i];
-
+    for (D3D12WindowData *windowData = renderer->firstClaimedWindow; windowData != NULL; windowData = windowData->next) {
         if (!D3D12_INTERNAL_CreateSwapchain(
             renderer,
             windowData,
@@ -7366,7 +7283,7 @@ static D3D12Fence *D3D12_INTERNAL_AcquireFence(
 
     SDL_LockMutex(renderer->fenceLock);
 
-    if (renderer->availableFenceCount == 0) {
+    if (renderer->firstAvailableFence == NULL) {
         res = ID3D12Device_CreateFence(
             renderer->device,
             D3D12_FENCE_UNSIGNALED_VALUE,
@@ -7389,8 +7306,9 @@ static D3D12Fence *D3D12_INTERNAL_AcquireFence(
         fence->event = CreateEvent(NULL, FALSE, FALSE, NULL);
         SDL_SetAtomicInt(&fence->referenceCount, 0);
     } else {
-        fence = renderer->availableFences[renderer->availableFenceCount - 1];
-        renderer->availableFenceCount -= 1;
+        fence = renderer->firstAvailableFence;
+        renderer->firstAvailableFence = fence->next;
+        fence->next = NULL;
         ID3D12Fence_Signal(fence->handle, D3D12_FENCE_UNSIGNALED_VALUE);
     }
 
@@ -7504,20 +7422,8 @@ static bool D3D12_INTERNAL_AllocateCommandBuffer(
         SET_STRING_ERROR_AND_RETURN("Failed to create ID3D12CommandList. Out of Memory", false);
     }
 
-    D3D12CommandBuffer **resizedAvailableCommandBuffers = (D3D12CommandBuffer **)SDL_realloc(
-        renderer->availableCommandBuffers,
-        sizeof(D3D12CommandBuffer *) * (renderer->availableCommandBufferCapacity + 1));
-
-    if (!resizedAvailableCommandBuffers) {
-        D3D12_INTERNAL_DestroyCommandBuffer(commandBuffer);
-        SET_STRING_ERROR_AND_RETURN("Failed to create ID3D12CommandList. Out of Memory", false);
-    }
-    // Add to inactive command buffer array
-    renderer->availableCommandBufferCapacity += 1;
-    renderer->availableCommandBuffers = resizedAvailableCommandBuffers;
-
-    renderer->availableCommandBuffers[renderer->availableCommandBufferCount] = commandBuffer;
-    renderer->availableCommandBufferCount += 1;
+    commandBuffer->next = renderer->firstAvailableCommandBuffer;
+    renderer->firstAvailableCommandBuffer = commandBuffer;
 
     return true;
 }
@@ -7527,14 +7433,15 @@ static D3D12CommandBuffer *D3D12_INTERNAL_AcquireCommandBufferFromPool(
 {
     D3D12CommandBuffer *commandBuffer;
 
-    if (renderer->availableCommandBufferCount == 0) {
+    if (renderer->firstAvailableCommandBuffer == NULL) {
         if (!D3D12_INTERNAL_AllocateCommandBuffer(renderer)) {
             return NULL;
         }
     }
 
-    commandBuffer = renderer->availableCommandBuffers[renderer->availableCommandBufferCount - 1];
-    renderer->availableCommandBufferCount -= 1;
+    commandBuffer = renderer->firstAvailableCommandBuffer;
+    renderer->firstAvailableCommandBuffer = commandBuffer->next;
+    commandBuffer->next = NULL;
 
     return commandBuffer;
 }
@@ -7766,54 +7673,44 @@ static void D3D12_INTERNAL_PerformPendingDestroys(D3D12Renderer *renderer)
 {
     SDL_LockMutex(renderer->disposeLock);
 
-    for (Sint32 i = renderer->buffersToDestroyCount - 1; i >= 0; i -= 1) {
-        if (SDL_GetAtomicInt(&renderer->buffersToDestroy[i]->referenceCount) == 0) {
-            D3D12_INTERNAL_DestroyBuffer(
-                renderer->buffersToDestroy[i]);
-
-            renderer->buffersToDestroy[i] = renderer->buffersToDestroy[renderer->buffersToDestroyCount - 1];
-            renderer->buffersToDestroyCount -= 1;
+    for (D3D12Buffer* buffer = renderer->firstBufferToDestroy; buffer != NULL;) {
+        D3D12Buffer *next = buffer->next;
+        if (SDL_GetAtomicInt(&buffer->referenceCount) == 0) {
+            D3D12_INTERNAL_DestroyBuffer(buffer);
         }
+        buffer = next;
     }
 
-    for (Sint32 i = renderer->texturesToDestroyCount - 1; i >= 0; i -= 1) {
-        if (SDL_GetAtomicInt(&renderer->texturesToDestroy[i]->referenceCount) == 0) {
-            D3D12_INTERNAL_DestroyTexture(
-                renderer->texturesToDestroy[i]);
-
-            renderer->texturesToDestroy[i] = renderer->texturesToDestroy[renderer->texturesToDestroyCount - 1];
-            renderer->texturesToDestroyCount -= 1;
+    for (D3D12Texture *texture = renderer->firstTextureToDestroy; texture != NULL;) {
+        D3D12Texture *next = texture->next;
+        if (SDL_GetAtomicInt(&texture->referenceCount) == 0) {
+            D3D12_INTERNAL_DestroyTexture(texture);
         }
+        texture = next;
     }
 
-    for (Sint32 i = renderer->samplersToDestroyCount - 1; i >= 0; i -= 1) {
-        if (SDL_GetAtomicInt(&renderer->samplersToDestroy[i]->referenceCount) == 0) {
-            D3D12_INTERNAL_DestroySampler(
-                renderer->samplersToDestroy[i]);
-
-            renderer->samplersToDestroy[i] = renderer->samplersToDestroy[renderer->samplersToDestroyCount - 1];
-            renderer->samplersToDestroyCount -= 1;
+    for (D3D12Sampler *sampler = renderer->firstSamplerToDestroy; sampler != NULL;) {
+        D3D12Sampler *next = sampler->next;
+        if (SDL_GetAtomicInt(&sampler->referenceCount) == 0) {
+            D3D12_INTERNAL_DestroySampler(sampler);
         }
+        sampler = next;
     }
 
-    for (Sint32 i = renderer->graphicsPipelinesToDestroyCount - 1; i >= 0; i -= 1) {
-        if (SDL_GetAtomicInt(&renderer->graphicsPipelinesToDestroy[i]->referenceCount) == 0) {
-            D3D12_INTERNAL_DestroyGraphicsPipeline(
-                renderer->graphicsPipelinesToDestroy[i]);
-
-            renderer->graphicsPipelinesToDestroy[i] = renderer->graphicsPipelinesToDestroy[renderer->graphicsPipelinesToDestroyCount - 1];
-            renderer->graphicsPipelinesToDestroyCount -= 1;
+    for (D3D12GraphicsPipeline *pipeline = renderer->firstGraphicsPipelineToDestroy; pipeline != NULL;) {
+        D3D12GraphicsPipeline *next = pipeline->next;
+        if (SDL_GetAtomicInt(&pipeline->referenceCount) == 0) {
+            D3D12_INTERNAL_DestroyGraphicsPipeline(pipeline);
         }
+        pipeline = next;
     }
 
-    for (Sint32 i = renderer->computePipelinesToDestroyCount - 1; i >= 0; i -= 1) {
-        if (SDL_GetAtomicInt(&renderer->computePipelinesToDestroy[i]->referenceCount) == 0) {
-            D3D12_INTERNAL_DestroyComputePipeline(
-                renderer->computePipelinesToDestroy[i]);
-
-            renderer->computePipelinesToDestroy[i] = renderer->computePipelinesToDestroy[renderer->computePipelinesToDestroyCount - 1];
-            renderer->computePipelinesToDestroyCount -= 1;
+    for (D3D12ComputePipeline *pipeline = renderer->firstComputePipelineToDestroy; pipeline != NULL;) {
+        D3D12ComputePipeline *next = pipeline->next;
+        if (SDL_GetAtomicInt(&pipeline->referenceCount) == 0) {
+            D3D12_INTERNAL_DestroyComputePipeline(pipeline);
         }
+        pipeline = next;
     }
 
     SDL_UnlockMutex(renderer->disposeLock);
@@ -7914,9 +7811,9 @@ static bool D3D12_INTERNAL_CleanCommandBuffer(
     SDL_LockMutex(renderer->acquireUniformBufferLock);
 
     for (i = 0; i < commandBuffer->usedUniformBufferCount; i += 1) {
-        D3D12_INTERNAL_ReturnUniformBufferToPool(
-            renderer,
-            commandBuffer->usedUniformBuffers[i]);
+        D3D12UniformBuffer *uniformBuffer = commandBuffer->usedUniformBuffers[i];
+        uniformBuffer->next = renderer->firstAvailableUniformBuffer;
+        renderer->firstAvailableUniformBuffer = uniformBuffer;
     }
     commandBuffer->usedUniformBufferCount = 0;
 
@@ -7964,25 +7861,24 @@ static bool D3D12_INTERNAL_CleanCommandBuffer(
     // Return command buffer to pool
     SDL_LockMutex(renderer->acquireCommandBufferLock);
 
-    if (renderer->availableCommandBufferCount == renderer->availableCommandBufferCapacity) {
-        renderer->availableCommandBufferCapacity += 1;
-        renderer->availableCommandBuffers = (D3D12CommandBuffer **)SDL_realloc(
-            renderer->availableCommandBuffers,
-            renderer->availableCommandBufferCapacity * sizeof(D3D12CommandBuffer *));
-    }
-
-    renderer->availableCommandBuffers[renderer->availableCommandBufferCount] = commandBuffer;
-    renderer->availableCommandBufferCount += 1;
+    commandBuffer->next = renderer->firstAvailableCommandBuffer;
+    renderer->firstAvailableCommandBuffer = commandBuffer->next;
 
     SDL_UnlockMutex(renderer->acquireCommandBufferLock);
 
     // Remove this command buffer from the submitted list
     if (!cancel) {
-        for (i = 0; i < renderer->submittedCommandBufferCount; i += 1) {
-            if (renderer->submittedCommandBuffers[i] == commandBuffer) {
-                renderer->submittedCommandBuffers[i] = renderer->submittedCommandBuffers[renderer->submittedCommandBufferCount - 1];
-                renderer->submittedCommandBufferCount -= 1;
+        D3D12CommandBuffer *prev = NULL;
+        for (D3D12CommandBuffer *curr = renderer->firstSubmittedCommandBuffer; curr != NULL; curr = curr->next) {
+            if (curr == commandBuffer) {
+                if (prev) {
+                    prev->next = curr->next;
+                } else {
+                    renderer->firstSubmittedCommandBuffer = curr->next;
+                }
+                break;
             }
+            prev = curr;
         }
     }
 
@@ -8079,16 +7975,8 @@ static bool D3D12_Submit(
     }
 
     // Mark the command buffer as submitted
-    if (renderer->submittedCommandBufferCount + 1 >= renderer->submittedCommandBufferCapacity) {
-        renderer->submittedCommandBufferCapacity = renderer->submittedCommandBufferCount + 1;
-
-        renderer->submittedCommandBuffers = (D3D12CommandBuffer **)SDL_realloc(
-            renderer->submittedCommandBuffers,
-            sizeof(D3D12CommandBuffer *) * renderer->submittedCommandBufferCapacity);
-    }
-
-    renderer->submittedCommandBuffers[renderer->submittedCommandBufferCount] = d3d12CommandBuffer;
-    renderer->submittedCommandBufferCount += 1;
+    d3d12CommandBuffer->next = renderer->firstSubmittedCommandBuffer;
+    renderer->firstSubmittedCommandBuffer = d3d12CommandBuffer;
 
     bool result = true;
 
@@ -8147,14 +8035,12 @@ static bool D3D12_Submit(
     }
 
     // Check for cleanups
-    for (Sint32 i = renderer->submittedCommandBufferCount - 1; i >= 0; i -= 1) {
-        Uint64 fenceValue = ID3D12Fence_GetCompletedValue(
-            renderer->submittedCommandBuffers[i]->inFlightFence->handle);
-
+    for (D3D12CommandBuffer* cmdbuf = renderer->firstSubmittedCommandBuffer; cmdbuf != NULL; cmdbuf = cmdbuf->next) {
+        Uint64 fenceValue = ID3D12Fence_GetCompletedValue(cmdbuf->inFlightFence->handle);
         if (fenceValue == D3D12_FENCE_SIGNAL_VALUE) {
             result &= D3D12_INTERNAL_CleanCommandBuffer(
                 renderer,
-                renderer->submittedCommandBuffers[i],
+                cmdbuf,
                 false);
         }
     }
@@ -8239,8 +8125,8 @@ static bool D3D12_Wait(
     bool result = true;
 
     // Clean up
-    for (Sint32 i = renderer->submittedCommandBufferCount - 1; i >= 0; i -= 1) {
-        result &= D3D12_INTERNAL_CleanCommandBuffer(renderer, renderer->submittedCommandBuffers[i], false);
+    for (D3D12CommandBuffer *cmdbuf = renderer->firstSubmittedCommandBuffer; cmdbuf != NULL; cmdbuf = cmdbuf->next) {
+        result &= D3D12_INTERNAL_CleanCommandBuffer(renderer, cmdbuf, false);
     }
 
     D3D12_INTERNAL_PerformPendingDestroys(renderer);
@@ -8289,14 +8175,12 @@ static bool D3D12_WaitForFences(
     bool result = true;
 
     // Check for cleanups
-    for (Sint32 i = renderer->submittedCommandBufferCount - 1; i >= 0; i -= 1) {
-        Uint64 fenceValue = ID3D12Fence_GetCompletedValue(
-            renderer->submittedCommandBuffers[i]->inFlightFence->handle);
-
+    for (D3D12CommandBuffer *cmdbuf = renderer->firstSubmittedCommandBuffer; cmdbuf != NULL; cmdbuf = cmdbuf->next) {
+        Uint64 fenceValue = ID3D12Fence_GetCompletedValue(cmdbuf->inFlightFence->handle);
         if (fenceValue == D3D12_FENCE_SIGNAL_VALUE) {
             result &= D3D12_INTERNAL_CleanCommandBuffer(
                 renderer,
-                renderer->submittedCommandBuffers[i],
+                cmdbuf,
                 false);
         }
     }
@@ -9915,44 +9799,6 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
         CHECK_D3D12_ERROR_AND_RETURN("Could not create indirect dispatch command signature", NULL);
     }
 
-    // Initialize pools
-
-    renderer->submittedCommandBufferCapacity = 4;
-    renderer->submittedCommandBufferCount = 0;
-    renderer->submittedCommandBuffers = (D3D12CommandBuffer **)SDL_calloc(
-        renderer->submittedCommandBufferCapacity, sizeof(D3D12CommandBuffer *));
-    if (!renderer->submittedCommandBuffers) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->uniformBufferPoolCapacity = 4;
-    renderer->uniformBufferPoolCount = 0;
-    renderer->uniformBufferPool = (D3D12UniformBuffer **)SDL_calloc(
-        renderer->uniformBufferPoolCapacity, sizeof(D3D12UniformBuffer *));
-    if (!renderer->uniformBufferPool) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->claimedWindowCapacity = 4;
-    renderer->claimedWindowCount = 0;
-    renderer->claimedWindows = (D3D12WindowData **)SDL_calloc(
-        renderer->claimedWindowCapacity, sizeof(D3D12WindowData *));
-    if (!renderer->claimedWindows) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->availableFenceCapacity = 4;
-    renderer->availableFenceCount = 0;
-    renderer->availableFences = (D3D12Fence **)SDL_calloc(
-        renderer->availableFenceCapacity, sizeof(D3D12Fence *));
-    if (!renderer->availableFences) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
     // Initialize staging descriptor pools
     for (Uint32 i = 0; i < D3D12_DESCRIPTOR_HEAP_TYPE_NUM_TYPES; i += 1) {
         renderer->stagingDescriptorPools[i] = D3D12_INTERNAL_CreateStagingDescriptorPool(
@@ -9985,53 +9831,6 @@ static SDL_GPUDevice *D3D12_CreateDevice(bool debugMode, bool preferLowPower, SD
                 return NULL;
             }
         }
-    }
-
-    // Deferred resource releasing
-
-    renderer->buffersToDestroyCapacity = 4;
-    renderer->buffersToDestroyCount = 0;
-    renderer->buffersToDestroy = (D3D12Buffer **)SDL_calloc(
-        renderer->buffersToDestroyCapacity, sizeof(D3D12Buffer *));
-    if (!renderer->buffersToDestroy) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->texturesToDestroyCapacity = 4;
-    renderer->texturesToDestroyCount = 0;
-    renderer->texturesToDestroy = (D3D12Texture **)SDL_calloc(
-        renderer->texturesToDestroyCapacity, sizeof(D3D12Texture *));
-    if (!renderer->texturesToDestroy) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->samplersToDestroyCapacity = 4;
-    renderer->samplersToDestroyCount = 0;
-    renderer->samplersToDestroy = (D3D12Sampler **)SDL_calloc(
-        renderer->samplersToDestroyCapacity, sizeof(D3D12Sampler *));
-    if (!renderer->samplersToDestroy) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->graphicsPipelinesToDestroyCapacity = 4;
-    renderer->graphicsPipelinesToDestroyCount = 0;
-    renderer->graphicsPipelinesToDestroy = (D3D12GraphicsPipeline **)SDL_calloc(
-        renderer->graphicsPipelinesToDestroyCapacity, sizeof(D3D12GraphicsPipeline *));
-    if (!renderer->graphicsPipelinesToDestroy) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
-    }
-
-    renderer->computePipelinesToDestroyCapacity = 4;
-    renderer->computePipelinesToDestroyCount = 0;
-    renderer->computePipelinesToDestroy = (D3D12ComputePipeline **)SDL_calloc(
-        renderer->computePipelinesToDestroyCapacity, sizeof(D3D12ComputePipeline *));
-    if (!renderer->computePipelinesToDestroy) {
-        D3D12_INTERNAL_DestroyRenderer(renderer);
-        return NULL;
     }
 
     // Locks
