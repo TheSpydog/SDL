@@ -558,7 +558,7 @@ typedef enum VulkanBufferType
 struct VulkanBuffer
 {
     VulkanBufferContainer *container;
-    Uint32 containerIndex;
+    VulkanBuffer *nextInCycle;
 
     VkBuffer buffer;
     VulkanMemoryUsedRegion *usedRegion;
@@ -577,10 +577,7 @@ struct VulkanBuffer
 struct VulkanBufferContainer
 {
     VulkanBuffer *activeBuffer;
-
-    VulkanBuffer **buffers;
-    Uint32 bufferCapacity;
-    Uint32 bufferCount;
+    VulkanBuffer *firstBufferInCycle;
 
     bool dedicated;
     char *debugName;
@@ -631,7 +628,7 @@ typedef struct VulkanTextureSubresource
 struct VulkanTexture
 {
     VulkanTextureContainer *container;
-    Uint32 containerIndex;
+    VulkanTexture *nextInCycle;
 
     VulkanMemoryUsedRegion *usedRegion;
 
@@ -649,11 +646,12 @@ struct VulkanTexture
     // FIXME: It'd be nice if we didn't have to have this on the texture...
     SDL_GPUTextureUsageFlags usage; // used for defrag transitions only.
 
-    Uint32 subresourceCount;
     VulkanTextureSubresource *subresources;
+    Uint32 subresourceCount;
 
     bool markedForDestroy; // so that defrag doesn't double-free
     bool externallyManaged; // true for XR swapchain images
+
     SDL_AtomicInt referenceCount;
 };
 
@@ -661,15 +659,13 @@ struct VulkanTextureContainer
 {
     TextureCommonHeader header;
 
-    VulkanTexture *activeTexture;
-
-    Uint32 textureCapacity;
-    Uint32 textureCount;
-    VulkanTexture **textures;
-
-    char *debugName;
     bool canBeCycled;
     bool externallyManaged; // true for XR swapchain images
+
+    VulkanTexture *activeTexture;
+    VulkanTexture *firstTextureInCycle;
+
+    char *debugName;
 };
 
 typedef enum VulkanBufferUsageMode
@@ -4384,12 +4380,8 @@ static VulkanBufferContainer *VULKAN_INTERNAL_CreateBufferContainer(
 
     bufferContainer->activeBuffer = buffer;
     buffer->container = bufferContainer;
-    buffer->containerIndex = 0;
 
-    bufferContainer->bufferCapacity = 1;
-    bufferContainer->bufferCount = 1;
-    bufferContainer->buffers = SDL_calloc(bufferContainer->bufferCapacity, sizeof(VulkanBuffer *));
-    bufferContainer->buffers[0] = bufferContainer->activeBuffer;
+    bufferContainer->firstBufferInCycle = buffer;
     bufferContainer->dedicated = dedicated;
     bufferContainer->debugName = NULL;
 
@@ -5665,10 +5657,10 @@ static void VULKAN_SetBufferName(
             text,
             textLength);
 
-        for (Uint32 i = 0; i < container->bufferCount; i += 1) {
+        for (VulkanBuffer *buffer = container->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
             VULKAN_INTERNAL_SetBufferName(
                 renderer,
-                container->buffers[i],
+                buffer,
                 text);
         }
     }
@@ -5713,10 +5705,10 @@ static void VULKAN_SetTextureName(
             text,
             textLength);
 
-        for (Uint32 i = 0; i < container->textureCount; i += 1) {
+        for (VulkanTexture *texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
             VULKAN_INTERNAL_SetTextureName(
                 renderer,
-                container->textures[i],
+                texture,
                 text);
         }
     }
@@ -6010,11 +6002,8 @@ static void VULKAN_INTERNAL_CycleActiveBuffer(
     VulkanRenderer *renderer,
     VulkanBufferContainer *container)
 {
-    VulkanBuffer *buffer;
-
     // If a previously-cycled buffer is available, we can use that.
-    for (Uint32 i = 0; i < container->bufferCount; i += 1) {
-        buffer = container->buffers[i];
+    for (VulkanBuffer *buffer = container->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
         if (SDL_GetAtomicInt(&buffer->referenceCount) == 0) {
             container->activeBuffer = buffer;
             return;
@@ -6022,7 +6011,7 @@ static void VULKAN_INTERNAL_CycleActiveBuffer(
     }
 
     // No buffer handle is available, create a new one.
-    buffer = VULKAN_INTERNAL_CreateBuffer(
+    VulkanBuffer *newBuffer = VULKAN_INTERNAL_CreateBuffer(
         renderer,
         container->activeBuffer->size,
         container->activeBuffer->usage,
@@ -6030,23 +6019,14 @@ static void VULKAN_INTERNAL_CycleActiveBuffer(
         container->dedicated,
         container->debugName);
 
-    if (!buffer) {
+    if (!newBuffer) {
         return;
     }
 
-    EXPAND_ARRAY_IF_NEEDED(
-        container->buffers,
-        VulkanBuffer *,
-        container->bufferCount + 1,
-        container->bufferCapacity,
-        container->bufferCapacity * 2);
-
-    container->buffers[container->bufferCount] = buffer;
-    buffer->container = container;
-    buffer->containerIndex = container->bufferCount;
-    container->bufferCount += 1;
-
-    container->activeBuffer = buffer;
+    newBuffer->container = container;
+    newBuffer->nextInCycle = container->firstBufferInCycle;
+    container->firstBufferInCycle = newBuffer;
+    container->activeBuffer = newBuffer;
 }
 
 static void VULKAN_INTERNAL_CycleActiveTexture(
@@ -6054,12 +6034,8 @@ static void VULKAN_INTERNAL_CycleActiveTexture(
     VulkanCommandBuffer *commandBuffer,
     VulkanTextureContainer *container)
 {
-    VulkanTexture *texture;
-
     // If a previously-cycled texture is available, we can use that.
-    for (Uint32 i = 0; i < container->textureCount; i += 1) {
-        texture = container->textures[i];
-
+    for (VulkanTexture *texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
         if (SDL_GetAtomicInt(&texture->referenceCount) == 0) {
             container->activeTexture = texture;
             return;
@@ -6067,34 +6043,25 @@ static void VULKAN_INTERNAL_CycleActiveTexture(
     }
 
     // No texture is available, generate a new one.
-    texture = VULKAN_INTERNAL_CreateTexture(
+    VulkanTexture *newTexture = VULKAN_INTERNAL_CreateTexture(
         renderer,
         &container->header.info);
 
-    if (!texture) {
+    if (!newTexture) {
         return;
     }
 
-    EXPAND_ARRAY_IF_NEEDED(
-        container->textures,
-        VulkanTexture *,
-        container->textureCount + 1,
-        container->textureCapacity,
-        container->textureCapacity * 2);
-
-    container->textures[container->textureCount] = texture;
-    texture->container = container;
-    texture->containerIndex = container->textureCount;
-    container->textureCount += 1;
-
-    container->activeTexture = texture;
+    newTexture->container = container;
+    newTexture->nextInCycle = container->firstTextureInCycle;
+    container->firstTextureInCycle = newTexture;
+    container->activeTexture = newTexture;
 
     // Transition texture after storing it as the memory barrier might need to read the texture's container info
     VULKAN_INTERNAL_TextureTransitionToDefaultUsage(
         renderer,
         commandBuffer,
         VULKAN_TEXTURE_USAGE_MODE_UNINITIALIZED,
-        texture);
+        newTexture);
 }
 
 static VulkanBuffer *VULKAN_INTERNAL_PrepareBufferForWrite(
@@ -6988,11 +6955,7 @@ static SDL_GPUTexture *VULKAN_CreateTexture(
 
     container->canBeCycled = true;
     container->activeTexture = texture;
-    container->textureCapacity = 1;
-    container->textureCount = 1;
-    container->textures = SDL_malloc(
-        container->textureCapacity * sizeof(VulkanTexture *));
-    container->textures[0] = container->activeTexture;
+    container->firstTextureInCycle = texture;
     container->debugName = NULL;
 
     if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
@@ -7000,7 +6963,6 @@ static SDL_GPUTexture *VULKAN_CreateTexture(
     }
 
     texture->container = container;
-    texture->containerIndex = 0;
 
     // Let's transition to the default barrier state, because for some reason Vulkan doesn't let us do that with initialLayout.
     // Only do this after "container" is set, so the texture
@@ -7105,21 +7067,19 @@ static void VULKAN_ReleaseTexture(
     SDL_GPUTexture *texture)
 {
     VulkanRenderer *renderer = (VulkanRenderer *)driverData;
-    VulkanTextureContainer *vulkanTextureContainer = (VulkanTextureContainer *)texture;
-    Uint32 i;
+    VulkanTextureContainer *container = (VulkanTextureContainer *)texture;
 
     SDL_LockMutex(renderer->disposeLock);
 
-    for (i = 0; i < vulkanTextureContainer->textureCount; i += 1) {
-        VULKAN_INTERNAL_ReleaseTexture(renderer, vulkanTextureContainer->textures[i]);
+    for (VulkanTexture *texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
+        VULKAN_INTERNAL_ReleaseTexture(renderer, texture);
     }
 
-    SDL_DestroyProperties(vulkanTextureContainer->header.info.props);
+    SDL_DestroyProperties(container->header.info.props);
 
     // Containers are just client handles, so we can destroy immediately
-    SDL_free(vulkanTextureContainer->debugName);
-    SDL_free(vulkanTextureContainer->textures);
-    SDL_free(vulkanTextureContainer);
+    SDL_free(container->debugName);
+    SDL_free(container);
 
     SDL_UnlockMutex(renderer->disposeLock);
 }
@@ -7176,12 +7136,10 @@ static void VULKAN_INTERNAL_ReleaseBufferContainer(
     VulkanRenderer *renderer,
     VulkanBufferContainer *bufferContainer)
 {
-    Uint32 i;
-
     SDL_LockMutex(renderer->disposeLock);
 
-    for (i = 0; i < bufferContainer->bufferCount; i += 1) {
-        VULKAN_INTERNAL_ReleaseBuffer(renderer, bufferContainer->buffers[i]);
+    for (VulkanBuffer *buffer = bufferContainer->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
+        VULKAN_INTERNAL_ReleaseBuffer(renderer, buffer);
     }
 
     // Containers are just client handles, so we can free immediately
@@ -7189,7 +7147,6 @@ static void VULKAN_INTERNAL_ReleaseBufferContainer(
         SDL_free(bufferContainer->debugName);
         bufferContainer->debugName = NULL;
     }
-    SDL_free(bufferContainer->buffers);
     SDL_free(bufferContainer);
 
     SDL_UnlockMutex(renderer->disposeLock);
@@ -11145,13 +11102,25 @@ static bool VULKAN_INTERNAL_DefragmentMemory(
 
             // re-point original container to new buffer
             newBuffer->container = currentRegion->vulkanBuffer->container;
-            newBuffer->containerIndex = currentRegion->vulkanBuffer->containerIndex;
             if (newBuffer->type == VULKAN_BUFFER_TYPE_UNIFORM) {
                 currentRegion->vulkanBuffer->uniformBufferForDefrag->buffer = newBuffer;
             } else {
-                newBuffer->container->buffers[newBuffer->containerIndex] = newBuffer;
-                if (newBuffer->container->activeBuffer == currentRegion->vulkanBuffer) {
-                    newBuffer->container->activeBuffer = newBuffer;
+                VulkanBuffer *prevBuffer = NULL;
+                for (VulkanBuffer *current = newBuffer->container->firstBufferInCycle; current != NULL; current = current->nextInCycle) {
+                    if (current == currentRegion->vulkanBuffer) {
+                        newBuffer->nextInCycle = current->nextInCycle;
+                        if (prevBuffer) {
+                            prevBuffer->nextInCycle = newBuffer;
+                        }
+                        if (current == current->container->activeBuffer) {
+                            current->container->activeBuffer = newBuffer;
+                        }
+                        if (current == current->container->firstBufferInCycle) {
+                            current->container->firstBufferInCycle = newBuffer;
+                        }
+                        break;
+                    }
+                    prevBuffer = current;
                 }
             }
 
@@ -11233,10 +11202,22 @@ static bool VULKAN_INTERNAL_DefragmentMemory(
 
             // re-point original container to new texture
             newTexture->container = currentRegion->vulkanTexture->container;
-            newTexture->containerIndex = currentRegion->vulkanTexture->containerIndex;
-            newTexture->container->textures[currentRegion->vulkanTexture->containerIndex] = newTexture;
-            if (currentRegion->vulkanTexture == currentRegion->vulkanTexture->container->activeTexture) {
-                newTexture->container->activeTexture = newTexture;
+            VulkanTexture *prevTexture = NULL;
+            for (VulkanTexture *current = newTexture->container->firstTextureInCycle; current != NULL; current = current->nextInCycle) {
+                if (current == currentRegion->vulkanTexture) {
+                    newTexture->nextInCycle = current->nextInCycle;
+                    if (prevTexture) {
+                        prevTexture->nextInCycle = newTexture;
+                    }
+                    if (current == current->container->activeTexture) {
+                        current->container->activeTexture = newTexture;
+                    }
+                    if (current == current->container->firstTextureInCycle) {
+                        current->container->firstTextureInCycle = newTexture;
+                    }
+                    break;
+                }
+                prevTexture = current;
             }
 
             VULKAN_INTERNAL_ReleaseTexture(renderer, currentRegion->vulkanTexture);
@@ -13295,11 +13276,7 @@ static XrResult VULKAN_CreateXRSwapchain(
         container->externallyManaged = true;
         container->canBeCycled = false;
         container->activeTexture = texture;
-        container->textureCapacity = 1;
-        container->textureCount = 1;
-        container->textures = SDL_malloc(
-            container->textureCapacity * sizeof(VulkanTexture *));
-        container->textures[0] = container->activeTexture;
+        container->firstTextureInCycle = texture;
         container->debugName = NULL;
     }
 

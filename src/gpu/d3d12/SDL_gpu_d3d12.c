@@ -820,19 +820,13 @@ typedef struct D3D12TextureContainer
 {
     TextureCommonHeader header;
 
-    D3D12Texture *activeTexture;
-
-    D3D12Texture **textures;
-    Uint32 textureCapacity;
-    Uint32 textureCount;
-
     // Swapchain images cannot be cycled
     bool canBeCycled;
 
-    char *debugName;
+    D3D12Texture *activeTexture;
+    D3D12Texture *firstTextureInCycle;
 
-    // XR swapchain images are managed by OpenXR runtime
-    bool externallyManaged;
+    char *debugName;
 } D3D12TextureContainer;
 
 // Null views represent by heap = NULL
@@ -854,7 +848,7 @@ typedef struct D3D12TextureSubresource
 struct D3D12Texture
 {
     D3D12TextureContainer *container;
-    Uint32 containerIndex;
+    D3D12Texture *nextInCycle;
 
     D3D12TextureSubresource *subresources;
     Uint32 subresourceCount; /* layerCount * num_levels */
@@ -1234,7 +1228,7 @@ struct D3D12TextureDownload
 struct D3D12Buffer
 {
     D3D12BufferContainer *container;
-    Uint32 containerIndex;
+    D3D12Buffer *nextInCycle;
 
     ID3D12Resource *handle;
     D3D12StagingDescriptor uavDescriptor;
@@ -1253,12 +1247,7 @@ struct D3D12BufferContainer
     D3D12BufferType type;
 
     D3D12Buffer *activeBuffer;
-
-    D3D12Buffer **buffers;
-    Uint32 bufferCapacity;
-    Uint32 bufferCount;
-
-    D3D12_RESOURCE_DESC bufferDesc;
+    D3D12Buffer *firstBufferInCycle;
 
     char *debugName;
 };
@@ -1423,15 +1412,14 @@ static void D3D12_INTERNAL_ReleaseBufferContainer(
 {
     SDL_LockMutex(renderer->disposeLock);
 
-    for (Uint32 i = 0; i < container->bufferCount; i += 1) {
+    for (D3D12Buffer* buffer = container->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
         D3D12_INTERNAL_ReleaseBuffer(
             renderer,
-            container->buffers[i]);
+            buffer);
     }
 
     // Containers are just client handles, so we can free immediately
     SDL_free(container->debugName);
-    SDL_free(container->buffers);
     SDL_free(container);
 
     SDL_UnlockMutex(renderer->disposeLock);
@@ -1497,17 +1485,16 @@ static void D3D12_INTERNAL_ReleaseTextureContainer(
 {
     SDL_LockMutex(renderer->disposeLock);
 
-    for (Uint32 i = 0; i < container->textureCount; i += 1) {
+    for (D3D12Texture* texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
         D3D12_INTERNAL_ReleaseTexture(
             renderer,
-            container->textures[i]);
+            texture);
     }
 
     SDL_DestroyProperties(container->header.info.props);
 
     // Containers are just client handles, so we can destroy immediately
     SDL_free(container->debugName);
-    SDL_free(container->textures);
     SDL_free(container);
 
     SDL_UnlockMutex(renderer->disposeLock);
@@ -2192,10 +2179,10 @@ static void D3D12_SetBufferName(
 
         container->debugName = SDL_strdup(text);
 
-        for (Uint32 i = 0; i < container->bufferCount; i += 1) {
+        for (D3D12Buffer *buffer = container->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
             D3D12_INTERNAL_SetResourceName(
                 renderer,
-                container->buffers[i]->handle,
+                buffer->handle,
                 text);
         }
     }
@@ -2214,10 +2201,10 @@ static void D3D12_SetTextureName(
 
         container->debugName = SDL_strdup(text);
 
-        for (Uint32 i = 0; i < container->textureCount; i += 1) {
+        for (D3D12Texture* texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
             D3D12_INTERNAL_SetResourceName(
                 renderer,
-                container->textures[i]->resource,
+                texture->resource,
                 text);
         }
     }
@@ -3760,16 +3747,6 @@ static SDL_GPUTexture *D3D12_CreateTexture(
         SDL_CopyProperties(createinfo->props, container->header.info.props);
     }
 
-    container->textureCapacity = 1;
-    container->textureCount = 1;
-    container->textures = (D3D12Texture **)SDL_calloc(
-        container->textureCapacity, sizeof(D3D12Texture *));
-
-    if (!container->textures) {
-        SDL_free(container);
-        return NULL;
-    }
-
     container->debugName = NULL;
     if (SDL_HasProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING)) {
         container->debugName = SDL_strdup(SDL_GetStringProperty(createinfo->props, SDL_PROP_GPU_TEXTURE_CREATE_NAME_STRING, NULL));
@@ -3784,16 +3761,14 @@ static SDL_GPUTexture *D3D12_CreateTexture(
         container->debugName);
 
     if (!texture) {
-        SDL_free(container->textures);
         SDL_free(container);
         return NULL;
     }
 
-    container->textures[0] = texture;
+    container->firstTextureInCycle = texture;
     container->activeTexture = texture;
 
     texture->container = container;
-    texture->containerIndex = 0;
 
     return (SDL_GPUTexture *)container;
 }
@@ -3987,9 +3962,6 @@ static D3D12Buffer *D3D12_INTERNAL_CreateBuffer(
         }
     }
 
-    buffer->container = NULL;
-    buffer->containerIndex = 0;
-
     buffer->transitioned = initialState != D3D12_RESOURCE_STATE_COMMON;
     SDL_SetAtomicInt(&buffer->referenceCount, 0);
 
@@ -4020,16 +3992,6 @@ static D3D12BufferContainer *D3D12_INTERNAL_CreateBufferContainer(
     container->size = size;
     container->type = type;
 
-    container->bufferCapacity = 1;
-    container->bufferCount = 1;
-    container->buffers = (D3D12Buffer **)SDL_calloc(
-        container->bufferCapacity, sizeof(D3D12Buffer *));
-    if (!container->buffers) {
-        SDL_free(container);
-        return NULL;
-    }
-    container->debugName = NULL;
-
     buffer = D3D12_INTERNAL_CreateBuffer(
         renderer,
         usageFlags,
@@ -4038,15 +4000,13 @@ static D3D12BufferContainer *D3D12_INTERNAL_CreateBufferContainer(
         debugName);
 
     if (buffer == NULL) {
-        SDL_free(container->buffers);
         SDL_free(container);
         return NULL;
     }
 
     container->activeBuffer = buffer;
-    container->buffers[0] = buffer;
+    container->firstBufferInCycle = buffer;
     buffer->container = container;
-    buffer->containerIndex = 0;
 
     if (debugName != NULL) {
         container->debugName = SDL_strdup(debugName);
@@ -4282,12 +4242,8 @@ static void D3D12_INTERNAL_CycleActiveTexture(
     D3D12Renderer *renderer,
     D3D12TextureContainer *container)
 {
-    D3D12Texture *texture;
-
     // If a previously-cycled texture is available, we can use that.
-    for (Uint32 i = 0; i < container->textureCount; i += 1) {
-        texture = container->textures[i];
-
+    for (D3D12Texture *texture = container->firstTextureInCycle; texture != NULL; texture = texture->nextInCycle) {
         if (SDL_GetAtomicInt(&texture->referenceCount) == 0) {
             container->activeTexture = texture;
             return;
@@ -4295,29 +4251,20 @@ static void D3D12_INTERNAL_CycleActiveTexture(
     }
 
     // No texture is available, generate a new one.
-    texture = D3D12_INTERNAL_CreateTexture(
+    D3D12Texture *newTexture = D3D12_INTERNAL_CreateTexture(
         renderer,
         &container->header.info,
         false,
         container->debugName);
 
-    if (!texture) {
+    if (!newTexture) {
         return;
     }
 
-    EXPAND_ARRAY_IF_NEEDED(
-        container->textures,
-        D3D12Texture *,
-        container->textureCount + 1,
-        container->textureCapacity,
-        container->textureCapacity * 2);
-
-    container->textures[container->textureCount] = texture;
-    texture->container = container;
-    texture->containerIndex = container->textureCount;
-    container->textureCount += 1;
-
-    container->activeTexture = texture;
+    newTexture->container = container;
+    newTexture->nextInCycle = container->firstTextureInCycle;
+    container->firstTextureInCycle = newTexture;
+    container->activeTexture = newTexture;
 }
 
 static D3D12TextureSubresource *D3D12_INTERNAL_PrepareTextureSubresourceForWrite(
@@ -4360,8 +4307,7 @@ static void D3D12_INTERNAL_CycleActiveBuffer(
     D3D12BufferContainer *container)
 {
     // If a previously-cycled buffer is available, we can use that.
-    for (Uint32 i = 0; i < container->bufferCount; i += 1) {
-        D3D12Buffer *buffer = container->buffers[i];
+    for (D3D12Buffer* buffer = container->firstBufferInCycle; buffer != NULL; buffer = buffer->nextInCycle) {
         if (SDL_GetAtomicInt(&buffer->referenceCount) == 0) {
             container->activeBuffer = buffer;
             return;
@@ -4369,37 +4315,21 @@ static void D3D12_INTERNAL_CycleActiveBuffer(
     }
 
     // No buffer handle is available, create a new one.
-    D3D12Buffer *buffer = D3D12_INTERNAL_CreateBuffer(
+    D3D12Buffer *newBuffer = D3D12_INTERNAL_CreateBuffer(
         renderer,
         container->usage,
         container->size,
         container->type,
         container->debugName);
 
-    if (!buffer) {
+    if (!newBuffer) {
         return;
     }
 
-    EXPAND_ARRAY_IF_NEEDED(
-        container->buffers,
-        D3D12Buffer *,
-        container->bufferCount + 1,
-        container->bufferCapacity,
-        container->bufferCapacity * 2);
-
-    container->buffers[container->bufferCount] = buffer;
-    buffer->container = container;
-    buffer->containerIndex = container->bufferCount;
-    container->bufferCount += 1;
-
-    container->activeBuffer = buffer;
-
-    if (renderer->debug_mode && container->debugName != NULL) {
-        D3D12_INTERNAL_SetResourceName(
-            renderer,
-            container->activeBuffer->handle,
-            container->debugName);
-    }
+    newBuffer->container = container;
+    newBuffer->nextInCycle = container->firstBufferInCycle;
+    container->firstBufferInCycle = newBuffer;
+    container->activeBuffer = newBuffer;
 }
 
 static D3D12Buffer *D3D12_INTERNAL_PrepareBufferForWrite(
@@ -6751,11 +6681,9 @@ static bool D3D12_INTERNAL_CreateSwapchain(
         texture = D3D12_INTERNAL_CreateTexture(renderer, &createInfo, true, "Swapchain");
         texture->container = &windowData->textureContainers[i];
         windowData->textureContainers[i].activeTexture = texture;
+        windowData->textureContainers[i].firstTextureInCycle = texture;
         windowData->textureContainers[i].canBeCycled = false;
         windowData->textureContainers[i].header.info = createInfo;
-        windowData->textureContainers[i].textureCapacity = 1;
-        windowData->textureContainers[i].textureCount = 1;
-        windowData->textureContainers[i].textures = &windowData->textureContainers[i].activeTexture;
     }
 
     // Initialize the swapchain data
@@ -6878,22 +6806,11 @@ static bool D3D12_INTERNAL_InitializeSwapchainTexture(
     pTextureContainer->header.info.format = SwapchainCompositionToSDLTextureFormat[composition];
 
     pTextureContainer->debugName = NULL;
-    pTextureContainer->textures = (D3D12Texture **)SDL_calloc(1, sizeof(D3D12Texture *));
-    if (!pTextureContainer->textures) {
-        SDL_free(pTexture->subresources);
-        SDL_free(pTexture);
-        ID3D12Resource_Release(swapchainTexture);
-        return false;
-    }
-
-    pTextureContainer->textureCapacity = 1;
-    pTextureContainer->textureCount = 1;
-    pTextureContainer->textures[0] = pTexture;
+    pTextureContainer->firstTextureInCycle = pTexture;
     pTextureContainer->activeTexture = pTexture;
     pTextureContainer->canBeCycled = false;
 
     pTexture->container = pTextureContainer;
-    pTexture->containerIndex = 0;
 
     // Create the SRV for the swapchain
     D3D12_INTERNAL_AssignStagingDescriptorHandle(
@@ -6954,7 +6871,6 @@ static bool D3D12_INTERNAL_ResizeSwapchain(
         SDL_free(windowData->textureContainers[i].activeTexture->subresources[0].rtvHandles);
         SDL_free(windowData->textureContainers[i].activeTexture->subresources);
         SDL_free(windowData->textureContainers[i].activeTexture);
-        SDL_free(windowData->textureContainers[i].textures);
     }
 
     // Resize the swapchain
@@ -7003,7 +6919,6 @@ static void D3D12_INTERNAL_DestroySwapchain(
         SDL_free(windowData->textureContainers[i].activeTexture->subresources[0].rtvHandles);
         SDL_free(windowData->textureContainers[i].activeTexture->subresources);
         SDL_free(windowData->textureContainers[i].activeTexture);
-        SDL_free(windowData->textureContainers[i].textures);
     }
 
     IDXGISwapChain_Release(windowData->swapchain);
@@ -9302,18 +9217,12 @@ static XrResult D3D12_CreateXRSwapchain(
         container->header.info.sample_count = SDL_GPU_SAMPLECOUNT_1;
         container->header.info.usage = SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
 
-        container->externallyManaged = true;
         container->canBeCycled = false;
         container->activeTexture = texture;
-        container->textureCapacity = 1;
-        container->textureCount = 1;
-        container->textures = (D3D12Texture **)SDL_malloc(
-            container->textureCapacity * sizeof(D3D12Texture *));
-        container->textures[0] = container->activeTexture;
+        container->firstTextureInCycle = container->activeTexture;
         container->debugName = NULL;
 
         texture->container = container;
-        texture->containerIndex = 0;
     }
 
     *textures = (SDL_GPUTexture **)textureContainers;
