@@ -156,7 +156,7 @@ class GdDesktopConfigurator:
         return {
             "GRDKEDITION": f"{self.gdk_edition}",
             "GameDK": f"{game_dk}\\",
-            "GameDKLatest": f"{ game_dk_latest }\\",
+            "GameDKCoreLatest": f"{ game_dk_latest }\\",
             "WindowsSdkDir": f"{ windows_sdk_dir }\\",
             "GamingGRDKBuild": f"{ gaming_grdk_build }\\",
             "VSInstallDir": f"{ self.vs_folder }\\",
