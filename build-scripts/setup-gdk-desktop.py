@@ -182,6 +182,7 @@ class GdDesktopConfigurator:
                     <Configuration Condition="'$(Configuration)' == ''">Debug</Configuration>
                     <XdkEditionTarget>{ self.gdk_edition }</XdkEditionTarget>
                     <DurangoXdkInstallPath>{ durango_xdk_install_path }</DurangoXdkInstallPath>
+                    <GameDKCoreLatest>{ self.game_dk_latest_path }</GameDKCoreLatest>
 
                     <DefaultXdkEditionRootVS2019>$(DurangoXdkInstallPath)\\{self.gdk_edition}\\GRDK\\VS2019\\flatDeployment\\MSBuild\\Microsoft\\VC\\{self.vs_toolset}\\Platforms\\$(Platform)\\</DefaultXdkEditionRootVS2019>
                     <XdkEditionRootVS2019>$(DurangoXdkInstallPath)\\{self.gdk_edition}\\GRDK\\VS2019\\flatDeployment\\MSBuild\\Microsoft\\VC\\{self.vs_toolset}\\Platforms\\$(Platform)\\</XdkEditionRootVS2019>
