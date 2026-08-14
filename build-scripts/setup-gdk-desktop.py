@@ -14,8 +14,9 @@ import urllib.request
 import zipfile
 
 # Update both variables when updating the GDK
-GIT_REF = "June_2024_Update_1"
-GDK_EDITION = "240601"  # YYMMUU
+GIT_REF = "April-2026-Update-3-v2604.3.7874"
+GDK_EDITION = "260403"  # YYMMUU
+ARCHIVE_NAME = "GDK_2604.3.7874"
 
 logger = logging.getLogger(__name__)
 
@@ -25,34 +26,33 @@ class GdDesktopConfigurator:
         self.gdk_edition = gdk_edition or GDK_EDITION
         self.gdk_path = gdk_path
         self.temp_folder = temp_folder or Path(tempfile.gettempdir())
-        self.dl_archive_path = Path(self.temp_folder) / f"{ self.git_ref }.zip"
-        self.gdk_extract_path = Path(self.temp_folder) / f"GDK-{ self.git_ref }"
+        self.dl_archive_path = Path(self.temp_folder) / f"{ ARCHIVE_NAME }.zip"
+        self.gdk_extract_path = Path(self.temp_folder) / f"{ ARCHIVE_NAME }"
         self.arch = arch
         self.vs_folder = vs_folder
         self._vs_version = vs_version
         self._vs_toolset = vs_toolset
 
     def download_archive(self) -> None:
-        gdk_url = f"https://github.com/microsoft/GDK/archive/refs/tags/{ GIT_REF }.zip"
+        gdk_url = f"https://github.com/microsoft/GDK/releases/downloads/{ GIT_REF }/{ ARCHIVE_NAME }.zip"
         logger.info("Downloading %s to %s", gdk_url, self.dl_archive_path)
         urllib.request.urlretrieve(gdk_url, self.dl_archive_path)
         assert self.dl_archive_path.is_file()
 
     def extract_zip_archive(self) -> None:
-        extract_path = self.gdk_extract_path.parent
         assert self.dl_archive_path.is_file()
-        logger.info("Extracting %s to %s", self.dl_archive_path, extract_path)
+        logger.info("Extracting %s to %s", self.dl_archive_path, self.gdk_extract_path)
         with zipfile.ZipFile(self.dl_archive_path) as zf:
-            zf.extractall(extract_path)
+            zf.extractall(self.gdk_extract_path)
         assert self.gdk_extract_path.is_dir(), f"{self.gdk_extract_path} must exist"
 
     def extract_development_kit(self) -> None:
-        extract_dks_cmd = self.gdk_extract_path / "SetupScripts/ExtractXboxOneDKs.cmd"
-        assert extract_dks_cmd.is_file()
-        logger.info("Extracting GDK Development Kit: running %s", extract_dks_cmd)
-        cmd = ["cmd.exe", "/C", str(extract_dks_cmd), str(self.gdk_extract_path), str(self.gdk_path)]
-        logger.debug("Running %r", cmd)
-        subprocess.check_call(cmd)
+        extract_dks_ps1 = self.gdk_extract_path / "SetupScripts/ExtractXboxOneDKs.ps1"
+        assert extract_dks_ps1.is_file()
+        logger.info("Extracting GDK Development Kit: running %s", extract_dks_ps1)
+        ps = ["powershell.exe", str(extract_dks_ps1), str(self.gdk_extract_path), str(self.gdk_path)]
+        logger.debug("Running %r", ps)
+        subprocess.check_call(ps)
 
     def detect_vs_version(self) -> str:
         vs_regex = re.compile("VS([0-9]{4})")
