@@ -192,14 +192,10 @@ class GdDesktopConfigurator:
                     <DisableInstalledVCTargetsUse>true</DisableInstalledVCTargetsUse>
                     <ClearDevCommandPromptEnvVars>true</ClearDevCommandPromptEnvVars>
                   </PropertyGroup>
-                  <ItemDefinitionGroup Condition="'$(Platform)' == 'Gaming.Desktop.x64'">
-                    <ClCompile>
-                      <AdditionalIncludeDirectories>{ additional_include_directories };%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
-                    </ClCompile>
-                    <Link>
-                      <AdditionalLibraryDirectories>{ additional_library_directories };%(AdditionalLibraryDirectories)</AdditionalLibraryDirectories>
-                    </Link>
-                  </ItemDefinitionGroup>
+                  <PropertyGroup Condition="'$(Platform)' == 'Gaming.Desktop.x64'">
+                    <LibraryPath>$(Console_SdkLibPath);$(LibraryPath)</LibraryPath>
+                    <IncludePath>$(Console_SdkIncludeRoot)$(IncludePath)</IncludePath>
+                  </PropertyGroup>
                 </Project>
             """))
 
