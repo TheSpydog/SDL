@@ -248,7 +248,7 @@ class GdDesktopConfigurator:
 def main():
     logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(allow_abbrev=False)
-    parser.add_argument("--arch", choices=["amd64"], default="amd64", help="Architecture")
+    parser.add_argument("--arch", choices=["x64"], default="x64", help="Architecture")
     parser.add_argument("--download", action="store_true", help="Download GDK")
     parser.add_argument("--extract", action="store_true", help="Extract downloaded GDK")
     parser.add_argument("--copy-msbuild", action="store_true", help="Copy MSBuild files")
