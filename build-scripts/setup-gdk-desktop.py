@@ -202,13 +202,13 @@ class GdDesktopConfigurator:
     @property
     def gdk_include_paths(self) -> list[Path]:
         return [
-            self.gaming_grdk_build_path / "gamekit/include",
+            self.game_dk_latest_path / "windows/include",
         ]
 
     @property
     def gdk_library_paths(self) -> list[Path]:
         return [
-            self.gaming_grdk_build_path / f"gamekit/lib/{self.arch}",
+            self.game_dk_latest_path / f"windows/lib/{self.arch}",
         ]
 
     @property
